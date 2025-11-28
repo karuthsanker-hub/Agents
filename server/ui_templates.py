@@ -744,6 +744,14 @@ def get_main_ui() -> str:
                 
                 log.response(url, response.status, responseData, timeMs);
                 
+                // Handle 401 Unauthorized - redirect to login
+                if (response.status === 401) {
+                    log.warning('Authentication required - redirecting to login');
+                    showToast('Please login to continue', 'warning');
+                    setTimeout(() => loginWithGoogle(), 1500);
+                    throw new Error('Authentication required');
+                }
+                
                 if (!response.ok) {
                     throw new Error(responseData.detail || `HTTP ${response.status}`);
                 }
@@ -902,6 +910,7 @@ def get_main_ui() -> str:
                     const res = await fetch('/articles/search', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
+                        credentials: 'include',
                         body: JSON.stringify({query: search, n_results: 50})
                     });
                     const data = await res.json();
@@ -983,6 +992,7 @@ def get_main_ui() -> str:
                 const res = await fetch('/articles/add', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({url})
                 });
                 const data = await res.json();
@@ -1059,7 +1069,7 @@ def get_main_ui() -> str:
         async function analyzeArticle(id) {
             showToast('Analyzing article with GPT...', 'info');
             try {
-                const res = await fetch('/articles/' + id + '/analyze', {method: 'POST'});
+                const res = await fetch('/articles/' + id + '/analyze', {method: 'POST', credentials: 'include'});
                 const data = await res.json();
                 if (data.success) {
                     showToast('Article analyzed!', 'success');
@@ -1077,7 +1087,7 @@ def get_main_ui() -> str:
         async function deleteArticle(id) {
             if (!confirm('Delete this article?')) return;
             try {
-                await fetch('/articles/' + id, {method: 'DELETE'});
+                await fetch('/articles/' + id, {method: 'DELETE', credentials: 'include'});
                 showToast('Article deleted', 'success');
                 loadArticles();
                 loadStats();
@@ -1090,7 +1100,7 @@ def get_main_ui() -> str:
         async function seedArticles() {
             showToast('Seeding articles...', 'info');
             try {
-                const res = await fetch('/articles/seed', {method: 'POST'});
+                const res = await fetch('/articles/seed', {method: 'POST', credentials: 'include'});
                 const data = await res.json();
                 showToast(data.message, 'success');
                 loadArticles();
@@ -1165,20 +1175,29 @@ def get_main_ui() -> str:
                 const res = await fetch('/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 removeTyping(typingId);
                 
+                // Handle 401 Unauthorized
+                if (res.status === 401) {
+                    addMessage('⚠️ Please login to use the chat feature. Click "Sign in" above.', 'assistant');
+                    showToast('Login required', 'warning');
+                    return;
+                }
+                
                 if (data.success) {
                     const meta = `${data.response_time_ms}ms • ${data.tokens_used} tokens`;
                     addMessage(data.response, 'assistant', meta);
                 } else {
-                    addMessage('Error: ' + data.error, 'assistant');
+                    addMessage('Error: ' + (data.error || 'Unknown error'), 'assistant');
                 }
             } catch (e) {
                 removeTyping(typingId);
-                addMessage('Error connecting to server', 'assistant');
+                log.error('Chat error:', e.message);
+                addMessage('Error connecting to server: ' + e.message, 'assistant');
             }
         }
         
@@ -1230,6 +1249,7 @@ def get_main_ui() -> str:
                 const res = await fetch('/articles/add', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({url: url})
                 });
                 const data = await res.json();
@@ -1267,7 +1287,7 @@ def get_main_ui() -> str:
             grid.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
             
             try {
-                const res = await fetch('/db-info');
+                const res = await fetch('/db-info', {credentials: 'include'});
                 const data = await res.json();
                 
                 grid.innerHTML = `
@@ -1423,7 +1443,7 @@ def get_main_ui() -> str:
                 const article = await artRes.json();
                 
                 // Fetch the actual article content
-                const fetchRes = await fetch('/articles/' + articleId + '/fetch', {method: 'POST'});
+                const fetchRes = await fetch('/articles/' + articleId + '/fetch', {method: 'POST', credentials: 'include'});
                 const fetchData = await fetchRes.json();
                 
                 if (!fetchData.success) {
@@ -1577,6 +1597,7 @@ def get_main_ui() -> str:
                 const res = await fetch('/articles/cards/format', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({
                         evidence_text: evidence,
                         author: author,
@@ -1714,6 +1735,7 @@ def get_main_ui() -> str:
                 const res = await fetch('/articles/cards/extract', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({
                         document_text: evidence,
                         topic_context: context,
