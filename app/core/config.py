@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     
+    # Email Whitelist (comma-separated list of allowed emails)
+    allowed_emails: str = ""
+    
     # Server Configuration
     host: str = "127.0.0.1"
     port: int = 8000
@@ -124,6 +127,24 @@ class Settings(BaseSettings):
     def is_google_auth_enabled(self) -> bool:
         """Check if Google OAuth is properly configured."""
         return bool(self.google_client_id and self.google_client_secret)
+    
+    @property
+    def allowed_emails_list(self) -> list:
+        """Get list of allowed emails from comma-separated string."""
+        if not self.allowed_emails:
+            return []
+        return [email.strip().lower() for email in self.allowed_emails.split(",") if email.strip()]
+    
+    def is_email_allowed(self, email: str) -> bool:
+        """
+        Check if an email is in the whitelist.
+        
+        If whitelist is empty, all emails are allowed (open access).
+        If whitelist has entries, only those emails can login.
+        """
+        if not self.allowed_emails_list:
+            return True  # No whitelist = open access
+        return email.lower().strip() in self.allowed_emails_list
 
 
 @lru_cache()

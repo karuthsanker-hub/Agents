@@ -197,6 +197,15 @@ async def startup_event():
     logger.info(f"Debug Mode:  {settings.debug}")
     logger.info(f"OpenAI Model: {settings.openai_model}")
     logger.info(f"Google Auth: {'Enabled' if settings.is_google_auth_enabled else 'Disabled'}")
+    
+    # Show email whitelist status
+    if settings.allowed_emails_list:
+        logger.info(f"Email Whitelist: {len(settings.allowed_emails_list)} emails allowed")
+        for email in settings.allowed_emails_list:
+            logger.info(f"  - {email}")
+    else:
+        logger.info("Email Whitelist: DISABLED (all Google accounts can login)")
+    
     logger.info("=" * 60)
     logger.info("Endpoints:")
     logger.info("  API Docs:   http://127.0.0.1:8000/docs")

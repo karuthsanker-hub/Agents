@@ -317,18 +317,24 @@ async def auth_status():
     Check if authentication is enabled and configured.
     
     Returns:
-        dict: Status of Google OAuth configuration
+        dict: Status of Google OAuth configuration and whitelist
     """
     settings = get_settings()
     logger.info(f"Auth status check - Google enabled: {settings.is_google_auth_enabled}")
     logger.info(f"Client ID configured: {bool(settings.google_client_id)}")
     logger.info(f"Client Secret configured: {bool(settings.google_client_secret)}")
     
+    whitelist_active = len(settings.allowed_emails_list) > 0
+    if whitelist_active:
+        logger.info(f"Email whitelist active: {len(settings.allowed_emails_list)} emails allowed")
+    
     return {
         "google_enabled": settings.is_google_auth_enabled,
         "login_url": "/auth/page" if settings.is_google_auth_enabled else None,
         "client_id_set": bool(settings.google_client_id),
-        "client_secret_set": bool(settings.google_client_secret)
+        "client_secret_set": bool(settings.google_client_secret),
+        "whitelist_active": whitelist_active,
+        "whitelist_count": len(settings.allowed_emails_list)
     }
 
 
@@ -465,7 +471,22 @@ async def google_callback(
         user = result["user"]
         token = result["session_token"]
         
-        logger.info(f"✅ User authenticated: {user['email']}")
+        # ==================== EMAIL WHITELIST CHECK ====================
+        user_email = user.get('email', '').lower()
+        if not settings.is_email_allowed(user_email):
+            logger.warning(f"⛔ Access denied for unauthorized email: {user_email}")
+            logger.info(f"Allowed emails: {settings.allowed_emails_list}")
+            # Invalidate the session we just created
+            try:
+                auth.logout(token)
+            except:
+                pass
+            return RedirectResponse(
+                url=f"/auth/page?error=Access+denied.+Your+email+is+not+authorized.&return_url={quote(return_url)}"
+            )
+        # ================================================================
+        
+        logger.info(f"✅ User authenticated: {user['email']} (whitelisted)")
         logger.info(f"Redirecting to: {return_url}")
         
         response = RedirectResponse(url=f"{return_url}?auth_success=true")
