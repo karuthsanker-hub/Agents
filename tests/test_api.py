@@ -34,6 +34,7 @@ def mock_env():
         "REDIS_URL": "redis://localhost:6379/0",
         "GOOGLE_CLIENT_ID": "test-client-id",
         "GOOGLE_CLIENT_SECRET": "test-client-secret",
+        "ALLOWED_EMAILS": "test@example.com,admin@example.com",
         "APP_ENV": "development",
         "DEBUG": "true",
     }
