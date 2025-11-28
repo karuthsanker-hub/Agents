@@ -925,9 +925,15 @@ def get_main_ui() -> str:
         
         function renderArticle(a) {
             const sideIcon = {aff: '🟢', neg: '🔴', both: '🟡', neutral: '⚪'}[a.side] || '⚪';
-            const topics = (a.topic_areas || []).slice(0, 3).map(t => `<span class="tag topic">${t}</span>`).join('');
+            // SECURITY: Escape topic areas to prevent XSS
+            const topics = (a.topic_areas || []).slice(0, 3).map(t => `<span class="tag topic">${escapeHtml(t)}</span>`).join('');
             const processed = a.is_processed ? '✅' : '⏳';
             const isSelected = selectedArticles.has(a.id);
+            
+            // SECURITY: Escape user-generated content
+            const safeTitle = escapeHtml(a.title || 'Untitled');
+            const safeSource = escapeHtml(a.source_name || 'Unknown');
+            const safeSourceType = escapeHtml(a.source_type || 'unknown');
             
             return `
                 <div class="article-item" style="display: flex; align-items: center;">
@@ -937,11 +943,11 @@ def get_main_ui() -> str:
                            ${isSelected ? 'checked' : ''}
                            onchange="toggleArticleSelect(${a.id}, this)"
                            style="width: 18px; height: 18px; margin-right: 12px; cursor: pointer; accent-color: var(--accent-blue);">
-                    <div class="article-side ${a.side || 'neutral'}">${sideIcon}</div>
+                    <div class="article-side ${escapeHtml(a.side || 'neutral')}">${sideIcon}</div>
                     <div class="article-content" style="flex: 1;">
-                        <div class="article-title">${a.title || 'Untitled'}</div>
-                        <div class="article-meta">${a.source_name || 'Unknown'} • ${a.publication_year || '?'} • ${processed}</div>
-                        <div class="article-tags">${topics}<span class="tag source">${a.source_type || 'unknown'}</span></div>
+                        <div class="article-title">${safeTitle}</div>
+                        <div class="article-meta">${safeSource} • ${a.publication_year || '?'} • ${processed}</div>
+                        <div class="article-tags">${topics}<span class="tag source">${safeSourceType}</span></div>
                     </div>
                     <div class="article-actions">
                         <button onclick="viewArticle(${a.id})">View</button>
@@ -1004,24 +1010,34 @@ def get_main_ui() -> str:
                 const a = await res.json();
                 currentArticle = a;  // Store for cut card
                 
-                document.getElementById('modalTitle').textContent = a.title || 'Article Details';
+                // SECURITY: Escape all user-generated content
+                const safeTitle = escapeHtml(a.title || 'Article Details');
+                const safeSource = escapeHtml(a.source_name || 'Unknown');
+                const safeSourceType = escapeHtml(a.source_type || 'unknown');
+                const safeAuthor = escapeHtml(a.author_name || 'Unknown');
+                const safeCreds = escapeHtml(a.author_credentials || '');
+                const safeSummary = escapeHtml(a.summary || 'No summary available. Click Analyze to generate.');
+                const safeSide = escapeHtml(a.side || 'Unclassified');
+                const safeUrl = escapeHtml(a.url);
+                
+                document.getElementById('modalTitle').textContent = safeTitle;
                 document.getElementById('modalBody').innerHTML = `
-                    <p><strong>Source:</strong> ${a.source_name || 'Unknown'} (${a.source_type || 'unknown'})</p>
-                    <p><strong>Author:</strong> ${a.author_name || 'Unknown'} ${a.author_credentials ? '- ' + a.author_credentials : ''}</p>
+                    <p><strong>Source:</strong> ${safeSource} (${safeSourceType})</p>
+                    <p><strong>Author:</strong> ${safeAuthor} ${safeCreds ? '- ' + safeCreds : ''}</p>
                     <p><strong>Year:</strong> ${a.publication_year || 'Unknown'}</p>
-                    <p><strong>Side:</strong> ${a.side || 'Unclassified'} ${a.side_confidence ? '(' + Math.round(a.side_confidence * 100) + '% confidence)' : ''}</p>
+                    <p><strong>Side:</strong> ${safeSide} ${a.side_confidence ? '(' + Math.round(a.side_confidence * 100) + '% confidence)' : ''}</p>
                     <p><strong>Relevance:</strong> ${a.relevance_score || '-'}/10</p>
                     <hr style="margin: 16px 0; border-color: var(--border);">
                     <p><strong>Summary:</strong></p>
-                    <p style="color: var(--text-secondary); margin-bottom: 16px;">${a.summary || 'No summary available. Click Analyze to generate.'}</p>
+                    <p style="color: var(--text-secondary); margin-bottom: 16px;">${safeSummary}</p>
                     ${a.key_claims && a.key_claims.length ? `
                         <p><strong>Key Claims:</strong></p>
                         <ul style="margin-left: 20px; color: var(--text-secondary);">
-                            ${a.key_claims.map(c => `<li>${c}</li>`).join('')}
+                            ${a.key_claims.map(c => `<li>${escapeHtml(c)}</li>`).join('')}
                         </ul>
                     ` : ''}
                     <hr style="margin: 16px 0; border-color: var(--border);">
-                    <p><strong>URL:</strong> <a href="${a.url}" target="_blank" style="color: var(--accent-blue);">${a.url}</a></p>
+                    <p><strong>URL:</strong> <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue);">${safeUrl}</a></p>
                     <div style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="cutCardFromArticle()" style="background: linear-gradient(135deg, #ff6b6b, #ffd93d);">🃏 Cut Card</button>
                         ${!a.is_processed ? `<button class="btn btn-primary" onclick="analyzeArticle(${a.id}); closeModal();">Analyze with GPT</button>` : ''}

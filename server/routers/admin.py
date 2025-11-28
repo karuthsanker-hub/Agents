@@ -2,97 +2,261 @@
 Admin Router
 ============
 Endpoints for admin configuration, usage monitoring, and prompt management.
-Password protected admin panel.
+Password protected admin panel with security hardening.
+
+SECURITY FEATURES:
+- HttpOnly cookies for session tokens
+- Session expiration (4 hours)
+- Rate limiting on login attempts
+- Brute force protection
 
 Author: Shiv Sanker
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+import time
+import secrets
+from datetime import datetime, timedelta
+from collections import defaultdict
 from typing import Optional, Dict, Any, List
+
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, validator
 
 from app.core.admin_config import get_admin_config
 from app.core.prompt_manager import get_prompt_manager
 from app.core.logging_config import api_logger as logger
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+# ==================== Security Constants ====================
+
+SESSION_EXPIRY_HOURS = 4
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+ADMIN_COOKIE_NAME = "admin_session"
 
 
 # ==================== Models ====================
 
 class LoginRequest(BaseModel):
     password: str
+    
+    @validator('password')
+    def password_not_empty(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Password cannot be empty')
+        return v
 
 
 class ConfigUpdateRequest(BaseModel):
     key: str
     value: str
     description: Optional[str] = None
+    
+    @validator('key')
+    def key_alphanumeric(cls, v):
+        # Only allow alphanumeric and underscores in config keys
+        if not v.replace('_', '').replace('-', '').isalnum():
+            raise ValueError('Invalid config key format')
+        return v
 
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+    
+    @validator('new_password')
+    def password_strong(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain a digit')
+        return v
 
 
 class PromptUpdateRequest(BaseModel):
     key: str
     content: str
+    
+    @validator('content')
+    def content_not_empty(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Prompt content cannot be empty')
+        return v
 
 
 # ==================== Session Management ====================
 
-# Simple in-memory session store (in production, use Redis)
-_admin_sessions = set()
+# Session store: token -> {user_id, expires_at, created_at}
+_admin_sessions: Dict[str, Dict[str, Any]] = {}
+
+# Rate limiting: IP -> {attempts, lockout_until}
+_login_attempts: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"attempts": 0, "lockout_until": None})
+
+
+def _get_client_ip(request: Request) -> str:
+    """Get client IP for rate limiting."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate_limit(request: Request) -> None:
+    """Check if IP is rate limited. Raises HTTPException if locked out."""
+    ip = _get_client_ip(request)
+    attempts = _login_attempts[ip]
+    
+    if attempts["lockout_until"]:
+        if datetime.now() < attempts["lockout_until"]:
+            remaining = (attempts["lockout_until"] - datetime.now()).seconds
+            logger.warning(f"Rate limited IP attempted login: {ip}")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many failed attempts. Try again in {remaining} seconds."
+            )
+        else:
+            # Lockout expired, reset
+            _login_attempts[ip] = {"attempts": 0, "lockout_until": None}
+
+
+def _record_failed_login(request: Request) -> None:
+    """Record a failed login attempt."""
+    ip = _get_client_ip(request)
+    _login_attempts[ip]["attempts"] += 1
+    
+    if _login_attempts[ip]["attempts"] >= MAX_LOGIN_ATTEMPTS:
+        _login_attempts[ip]["lockout_until"] = datetime.now() + timedelta(minutes=LOCKOUT_MINUTES)
+        logger.warning(f"IP {ip} locked out after {MAX_LOGIN_ATTEMPTS} failed attempts")
+
+
+def _clear_failed_attempts(request: Request) -> None:
+    """Clear failed attempts after successful login."""
+    ip = _get_client_ip(request)
+    if ip in _login_attempts:
+        del _login_attempts[ip]
 
 
 def create_session_token() -> str:
-    """Create a simple session token."""
-    import secrets
-    return secrets.token_urlsafe(32)
+    """Create a cryptographically secure session token."""
+    return secrets.token_urlsafe(48)
 
 
-def is_authenticated(token: str) -> bool:
-    """Check if session token is valid."""
-    return token in _admin_sessions
+def is_authenticated(request: Request) -> bool:
+    """Check if request has valid admin session cookie."""
+    token = request.cookies.get(ADMIN_COOKIE_NAME)
+    if not token or token not in _admin_sessions:
+        return False
+    
+    session = _admin_sessions[token]
+    if datetime.now() > session["expires_at"]:
+        # Session expired, clean up
+        del _admin_sessions[token]
+        return False
+    
+    return True
+
+
+def get_session_token(request: Request) -> Optional[str]:
+    """Extract session token from cookie."""
+    return request.cookies.get(ADMIN_COOKIE_NAME)
+
+
+def require_admin(request: Request) -> str:
+    """Dependency to require admin authentication."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+    return get_session_token(request)
+
+
+# Clean up expired sessions periodically
+def _cleanup_expired_sessions():
+    """Remove expired sessions from memory."""
+    now = datetime.now()
+    expired = [token for token, session in _admin_sessions.items() if now > session["expires_at"]]
+    for token in expired:
+        del _admin_sessions[token]
 
 
 # ==================== Endpoints ====================
 
 @router.post("/login")
-async def admin_login(request: LoginRequest):
+async def admin_login(request: Request, login_data: LoginRequest, response: Response):
     """
     Login to admin panel.
-    Returns a session token if password is correct.
+    
+    SECURITY:
+    - Rate limited (5 attempts, 15 min lockout)
+    - Sets HttpOnly cookie
+    - Session expires in 4 hours
     """
+    # Check rate limiting
+    _check_rate_limit(request)
+    _cleanup_expired_sessions()
+    
     admin = get_admin_config()
     
-    if admin.verify_admin_password(request.password):
+    if admin.verify_admin_password(login_data.password):
+        # Clear failed attempts
+        _clear_failed_attempts(request)
+        
+        # Create session
         token = create_session_token()
-        _admin_sessions.add(token)
-        logger.info("Admin login successful")
+        _admin_sessions[token] = {
+            "created_at": datetime.now(),
+            "expires_at": datetime.now() + timedelta(hours=SESSION_EXPIRY_HOURS),
+            "ip": _get_client_ip(request)
+        }
+        
+        logger.info(f"Admin login successful from {_get_client_ip(request)}")
+        
+        # Set HttpOnly cookie
+        settings = get_settings()
+        response.set_cookie(
+            key=ADMIN_COOKIE_NAME,
+            value=token,
+            httponly=True,
+            secure=settings.is_production,  # Only HTTPS in production
+            samesite="lax",
+            max_age=SESSION_EXPIRY_HOURS * 3600
+        )
+        
         return {
             "success": True,
-            "token": token,
-            "message": "Login successful"
+            "message": "Login successful",
+            "expires_in": SESSION_EXPIRY_HOURS * 3600
         }
     
-    logger.warning("Admin login failed - invalid password")
+    # Record failed attempt
+    _record_failed_login(request)
+    logger.warning(f"Admin login failed from {_get_client_ip(request)}")
     raise HTTPException(status_code=401, detail="Invalid password")
 
 
 @router.post("/logout")
-async def admin_logout(token: str):
-    """Logout from admin panel."""
-    _admin_sessions.discard(token)
+async def admin_logout(request: Request, response: Response):
+    """Logout from admin panel. Clears session cookie."""
+    token = request.cookies.get(ADMIN_COOKIE_NAME)
+    
+    if token and token in _admin_sessions:
+        del _admin_sessions[token]
+        logger.info("Admin logged out")
+    
+    response.delete_cookie(ADMIN_COOKIE_NAME)
     return {"success": True, "message": "Logged out"}
 
 
 @router.get("/config")
-async def get_config(token: str):
-    """Get all configuration values. Requires admin token."""
-    if not is_authenticated(token):
+async def get_config(request: Request):
+    """Get all configuration values. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     admin = get_admin_config()
@@ -110,35 +274,41 @@ async def get_config(token: str):
 
 
 @router.post("/config")
-async def update_config(request: ConfigUpdateRequest, token: str):
-    """Update a configuration value. Requires admin token."""
-    if not is_authenticated(token):
+async def update_config(request: Request, config_data: ConfigUpdateRequest):
+    """Update a configuration value. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     admin = get_admin_config()
-    success = admin.set_config(request.key, request.value, request.description)
+    success = admin.set_config(config_data.key, config_data.value, config_data.description)
     
     if success:
-        logger.info(f"Admin updated config: {request.key} = {request.value}")
-        return {"success": True, "message": f"Config '{request.key}' updated"}
+        logger.info(f"Admin updated config: {config_data.key}")
+        return {"success": True, "message": f"Config '{config_data.key}' updated"}
     
     raise HTTPException(status_code=500, detail="Failed to update config")
 
 
 @router.post("/change-password")
-async def change_password(request: PasswordChangeRequest, token: str):
-    """Change admin password. Requires current password verification."""
-    if not is_authenticated(token):
+async def change_password(request: Request, password_data: PasswordChangeRequest):
+    """
+    Change admin password. 
+    
+    SECURITY:
+    - Requires current password verification
+    - Enforces password complexity (8+ chars, upper, lower, digit)
+    """
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     admin = get_admin_config()
     
     # Verify current password
-    if not admin.verify_admin_password(request.current_password):
+    if not admin.verify_admin_password(password_data.current_password):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     
     # Change password
-    if admin.change_admin_password(request.new_password):
+    if admin.change_admin_password(password_data.new_password):
         logger.info("Admin password changed")
         return {"success": True, "message": "Password changed successfully"}
     
@@ -146,9 +316,9 @@ async def change_password(request: PasswordChangeRequest, token: str):
 
 
 @router.get("/usage")
-async def get_usage(token: str):
-    """Get usage statistics. Requires admin token."""
-    if not is_authenticated(token):
+async def get_usage(request: Request):
+    """Get usage statistics. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     admin = get_admin_config()
@@ -178,9 +348,9 @@ async def check_rate_limit():
 # ==================== Prompt Management ====================
 
 @router.get("/prompts")
-async def get_prompts(token: str):
-    """Get all prompts. Requires admin token."""
-    if not is_authenticated(token):
+async def get_prompts(request: Request):
+    """Get all prompts. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     prompt_manager = get_prompt_manager()
@@ -190,10 +360,14 @@ async def get_prompts(token: str):
 
 
 @router.get("/prompts/{key}")
-async def get_prompt(key: str, token: str):
-    """Get a specific prompt by key. Requires admin token."""
-    if not is_authenticated(token):
+async def get_prompt(key: str, request: Request):
+    """Get a specific prompt by key. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Sanitize key input
+    if not key.replace('_', '').replace('-', '').isalnum():
+        raise HTTPException(status_code=400, detail="Invalid prompt key")
     
     prompt_manager = get_prompt_manager()
     prompt = prompt_manager.get_prompt_full(key)
@@ -205,42 +379,51 @@ async def get_prompt(key: str, token: str):
 
 
 @router.post("/prompts")
-async def update_prompt(request: PromptUpdateRequest, token: str):
-    """Update a prompt. Requires admin token."""
-    if not is_authenticated(token):
+async def update_prompt(request: Request, prompt_data: PromptUpdateRequest):
+    """Update a prompt. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     prompt_manager = get_prompt_manager()
-    success = prompt_manager.update_prompt(request.key, request.content, "admin")
+    success = prompt_manager.update_prompt(prompt_data.key, prompt_data.content, "admin")
     
     if success:
-        logger.info(f"Admin updated prompt: {request.key}")
-        return {"success": True, "message": f"Prompt '{request.key}' updated"}
+        logger.info(f"Admin updated prompt: {prompt_data.key}")
+        return {"success": True, "message": f"Prompt updated"}
     
     raise HTTPException(status_code=500, detail="Failed to update prompt")
 
 
 @router.post("/prompts/{key}/reset")
-async def reset_prompt(key: str, token: str):
-    """Reset a prompt to default. Requires admin token."""
-    if not is_authenticated(token):
+async def reset_prompt(key: str, request: Request):
+    """Reset a prompt to default. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Sanitize key input
+    if not key.replace('_', '').replace('-', '').isalnum():
+        raise HTTPException(status_code=400, detail="Invalid prompt key")
     
     prompt_manager = get_prompt_manager()
     success = prompt_manager.reset_prompt(key)
     
     if success:
         logger.info(f"Admin reset prompt to default: {key}")
-        return {"success": True, "message": f"Prompt '{key}' reset to default"}
+        return {"success": True, "message": "Prompt reset to default"}
     
     raise HTTPException(status_code=500, detail="Failed to reset prompt")
 
 
 @router.get("/prompts/{key}/history")
-async def get_prompt_history(key: str, token: str, limit: int = 10):
-    """Get version history for a prompt. Requires admin token."""
-    if not is_authenticated(token):
+async def get_prompt_history(key: str, request: Request, limit: int = 10):
+    """Get version history for a prompt. Requires admin cookie."""
+    if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Sanitize inputs
+    if not key.replace('_', '').replace('-', '').isalnum():
+        raise HTTPException(status_code=400, detail="Invalid prompt key")
+    limit = min(max(1, limit), 100)  # Clamp between 1-100
     
     prompt_manager = get_prompt_manager()
     return {
@@ -691,15 +874,13 @@ def get_admin_html() -> str:
     <div id="toast" class="toast hidden"></div>
     
     <script>
-        let adminToken = localStorage.getItem('adminToken') || '';
+        // SECURITY: Using HttpOnly cookies - no token in localStorage
         let configChanges = {};
         let currentPromptKey = null;
         let prompts = [];
         
-        // Check if already logged in
-        if (adminToken) {
-            checkSession();
-        }
+        // Check if already logged in (cookie-based)
+        checkSession();
         
         function showAdminTab(tabName) {
             // Hide all tabs
@@ -716,18 +897,15 @@ def get_admin_html() -> str:
         
         async function checkSession() {
             try {
-                const res = await fetch('/admin/usage?token=' + adminToken);
+                // Credentials:'include' sends cookies automatically
+                const res = await fetch('/admin/usage', {credentials: 'include'});
                 if (res.ok) {
                     showDashboard();
                     loadUsage();
                     loadConfig();
-                } else {
-                    localStorage.removeItem('adminToken');
-                    adminToken = '';
                 }
             } catch (e) {
-                localStorage.removeItem('adminToken');
-                adminToken = '';
+                console.log('Not authenticated');
             }
         }
         
@@ -739,19 +917,18 @@ def get_admin_html() -> str:
                 const res = await fetch('/admin/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',  // For cookie
                     body: JSON.stringify({password})
                 });
                 
                 if (res.ok) {
-                    const data = await res.json();
-                    adminToken = data.token;
-                    localStorage.setItem('adminToken', adminToken);
                     showDashboard();
                     loadUsage();
                     loadConfig();
                     showToast('Login successful!');
                 } else {
-                    errorEl.textContent = 'Invalid password';
+                    const data = await res.json();
+                    errorEl.textContent = data.detail || 'Invalid password';
                     errorEl.style.display = 'block';
                 }
             } catch (e) {
@@ -767,7 +944,7 @@ def get_admin_html() -> str:
         
         async function loadUsage() {
             try {
-                const res = await fetch('/admin/usage?token=' + adminToken);
+                const res = await fetch('/admin/usage', {credentials: 'include'});
                 const data = await res.json();
                 
                 document.getElementById('todayTokens').textContent = (data.today.total_tokens || 0).toLocaleString();
@@ -791,7 +968,7 @@ def get_admin_html() -> str:
         
         async function loadConfig() {
             try {
-                const res = await fetch('/admin/config?token=' + adminToken);
+                const res = await fetch('/admin/config', {credentials: 'include'});
                 const data = await res.json();
                 
                 const container = document.getElementById('configList');
@@ -840,7 +1017,7 @@ def get_admin_html() -> str:
         
         async function loadPrompts() {
             try {
-                const res = await fetch('/admin/prompts?token=' + adminToken);
+                const res = await fetch('/admin/prompts', {credentials: 'include'});
                 const data = await res.json();
                 prompts = data.prompts;
                 
@@ -929,9 +1106,10 @@ def get_admin_html() -> str:
             const content = document.getElementById('promptContent').value;
             
             try {
-                const res = await fetch('/admin/prompts?token=' + adminToken, {
+                const res = await fetch('/admin/prompts', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({key: currentPromptKey, content})
                 });
                 
@@ -953,8 +1131,9 @@ def get_admin_html() -> str:
             if (!confirm('Reset this prompt to its default value?')) return;
             
             try {
-                const res = await fetch('/admin/prompts/' + currentPromptKey + '/reset?token=' + adminToken, {
-                    method: 'POST'
+                const res = await fetch('/admin/prompts/' + currentPromptKey + '/reset', {
+                    method: 'POST',
+                    credentials: 'include'
                 });
                 
                 if (res.ok) {
@@ -1004,9 +1183,10 @@ def get_admin_html() -> str:
             let saved = 0;
             for (const key of keys) {
                 try {
-                    await fetch('/admin/config?token=' + adminToken, {
+                    await fetch('/admin/config', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
+                        credentials: 'include',
                         body: JSON.stringify({key, value: configChanges[key]})
                     });
                     saved++;
@@ -1041,9 +1221,10 @@ def get_admin_html() -> str:
             }
             
             try {
-                const res = await fetch('/admin/change-password?token=' + adminToken, {
+                const res = await fetch('/admin/change-password', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
                     body: JSON.stringify({current_password: current, new_password: newPass})
                 });
                 
@@ -1062,9 +1243,7 @@ def get_admin_html() -> str:
         }
         
         async function logout() {
-            await fetch('/admin/logout?token=' + adminToken, {method: 'POST'});
-            localStorage.removeItem('adminToken');
-            adminToken = '';
+            await fetch('/admin/logout', {method: 'POST', credentials: 'include'});
             location.reload();
         }
         

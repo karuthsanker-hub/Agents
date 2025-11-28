@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     All configuration is centralized here and loaded from .env file.
     Settings are cached for performance using lru_cache.
     
+    SECURITY:
+    - secret_key MUST be changed in production
+    - debug MUST be False in production
+    - Allowed CORS origins are restricted by environment
+    
     Attributes:
         openai_api_key: OpenAI API key for GPT calls
         database_url: PostgreSQL connection string
@@ -61,6 +66,31 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     secret_key: str = "change-me-in-production-use-secrets-token"
+    
+    # CORS allowed origins (comma-separated in env)
+    allowed_origins: str = "http://localhost:8000,http://127.0.0.1:8000"
+    
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production mode."""
+        return self.app_env.lower() == "production"
+    
+    def validate_production_settings(self) -> list:
+        """
+        Validate settings for production security.
+        Returns list of warnings/errors.
+        """
+        issues = []
+        
+        if self.is_production:
+            if self.secret_key == "change-me-in-production-use-secrets-token":
+                issues.append("CRITICAL: SECRET_KEY must be changed in production!")
+            if self.debug:
+                issues.append("WARNING: Debug mode should be disabled in production")
+            if len(self.secret_key) < 32:
+                issues.append("WARNING: SECRET_KEY should be at least 32 characters")
+        
+        return issues
     
     # OpenAI Configuration
     openai_api_key: str

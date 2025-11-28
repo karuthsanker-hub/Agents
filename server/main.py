@@ -48,21 +48,42 @@ logger.info("Starting Arctic Debate Card Agent API Server")
 
 # ==================== FastAPI App ====================
 
+# SECURITY: Disable API docs in production
+settings_for_docs = get_settings()
+docs_url = "/docs" if settings_for_docs.debug else None
+redoc_url = "/redoc" if settings_for_docs.debug else None
+
 app = FastAPI(
     title="Arctic Debate Card Agent",
     description="AI-powered research assistant for Policy Debate (2025-2026 Arctic Topic)",
     version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url=docs_url,
+    redoc_url=redoc_url
 )
 
-# CORS middleware
+# CORS middleware - SECURITY: Restrict origins in production
+settings = get_settings()
+
+# Define allowed origins based on environment
+if settings.app_env == "production":
+    # In production, only allow specific origins
+    allowed_origins = [
+        "https://yourdomain.com",  # Update with your actual domain
+    ]
+else:
+    # In development, allow localhost
+    allowed_origins = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",  # If using separate frontend
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 

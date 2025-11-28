@@ -4,6 +4,11 @@ Authentication Router
 Handles Google OAuth login/logout and session management.
 Includes dedicated login page with debugging support.
 
+SECURITY:
+- Open redirect protection via URL validation
+- HttpOnly cookies for session tokens
+- Secure flag in production
+
 Author: Shiv Sanker
 Created: 2024
 License: MIT
@@ -13,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode, quote, urlparse
 
 from app.core.config import get_settings
 from app.core.auth import get_auth_manager
@@ -21,6 +26,61 @@ from app.core.logging_config import get_logger
 
 logger = get_logger("auth.router")
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+# ==================== Security Helpers ====================
+
+# Allowed redirect paths (must start with these)
+ALLOWED_REDIRECT_PREFIXES = ["/ui", "/admin", "/articles", "/chat"]
+
+def validate_return_url(return_url: str) -> str:
+    """
+    Validate and sanitize return URL to prevent open redirects.
+    
+    SECURITY: Only allows local paths starting with allowed prefixes.
+    Returns "/ui" for invalid URLs.
+    
+    Args:
+        return_url: The URL to validate
+        
+    Returns:
+        Safe local path
+    """
+    if not return_url:
+        return "/ui"
+    
+    # Remove any whitespace
+    return_url = return_url.strip()
+    
+    # Must start with /
+    if not return_url.startswith('/'):
+        logger.warning(f"Rejected non-local return URL: {return_url[:50]}")
+        return "/ui"
+    
+    # Parse to check for protocol injection
+    parsed = urlparse(return_url)
+    
+    # Reject if it has a netloc (means it's trying to redirect externally)
+    if parsed.netloc:
+        logger.warning(f"Rejected external redirect attempt: {return_url[:50]}")
+        return "/ui"
+    
+    # Reject javascript: and data: URLs
+    if parsed.scheme and parsed.scheme.lower() in ['javascript', 'data', 'vbscript']:
+        logger.warning(f"Rejected dangerous scheme: {parsed.scheme}")
+        return "/ui"
+    
+    # Check against allowed prefixes
+    path = parsed.path
+    if not any(path.startswith(prefix) for prefix in ALLOWED_REDIRECT_PREFIXES):
+        # Allow exact "/" or fallback to /ui
+        if path == "/":
+            return "/ui"
+        logger.warning(f"Rejected disallowed redirect path: {path[:50]}")
+        return "/ui"
+    
+    # Safe - return the path (without query params for extra safety in redirects)
+    return path
 
 
 # ==================== Models ====================
@@ -282,11 +342,13 @@ async def login_page(
     Dedicated login page.
     
     Args:
-        return_url: URL to redirect to after successful login
+        return_url: URL to redirect to after successful login (validated)
         error: Error message to display
     """
-    logger.info(f"Login page accessed - return_url: {return_url}")
-    return get_login_page_html(error=error, return_url=return_url)
+    # SECURITY: Validate return URL to prevent open redirects
+    safe_return_url = validate_return_url(return_url)
+    logger.info(f"Login page accessed - return_url: {safe_return_url}")
+    return get_login_page_html(error=error, return_url=safe_return_url)
 
 
 @router.get("/google")
@@ -296,19 +358,24 @@ async def google_login(request: Request, return_url: str = "/ui"):
     
     Redirects user to Google's authorization page.
     On success, Google will redirect back to /auth/callback.
+    
+    SECURITY: return_url is validated to prevent open redirects.
     """
     settings = get_settings()
     
+    # SECURITY: Validate return URL
+    safe_return_url = validate_return_url(return_url)
+    
     logger.info("=" * 50)
     logger.info("🔐 GOOGLE LOGIN INITIATED")
-    logger.info(f"Return URL: {return_url}")
+    logger.info(f"Return URL (validated): {safe_return_url}")
     logger.info(f"Client ID: {settings.google_client_id[:20] if settings.google_client_id else 'NOT SET'}...")
     logger.info(f"Client Secret: {'SET' if settings.google_client_secret else 'NOT SET'}")
     logger.info("=" * 50)
     
     if not settings.is_google_auth_enabled:
         logger.error("Google OAuth is NOT configured!")
-        return RedirectResponse(url=f"/auth/page?error=Google+OAuth+not+configured&return_url={quote(return_url)}")
+        return RedirectResponse(url=f"/auth/page?error=Google+OAuth+not+configured&return_url={quote(safe_return_url)}")
     
     try:
         auth = get_auth_manager()
@@ -317,8 +384,8 @@ async def google_login(request: Request, return_url: str = "/ui"):
         redirect_uri = str(request.url_for("google_callback"))
         logger.info(f"Redirect URI: {redirect_uri}")
         
-        # Store return URL in state (encoded)
-        state_data = return_url
+        # Store validated return URL in state
+        state_data = safe_return_url
         
         # Get Google login URL
         login_url = auth.get_google_login_url(redirect_uri, state=state_data)
@@ -330,9 +397,8 @@ async def google_login(request: Request, return_url: str = "/ui"):
         
     except Exception as e:
         logger.error(f"Error initiating Google login: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return RedirectResponse(url=f"/auth/page?error={quote(str(e))}&return_url={quote(return_url)}")
+        # SECURITY: Don't expose internal error details to user
+        return RedirectResponse(url=f"/auth/page?error=Authentication+error&return_url={quote(safe_return_url)}")
 
 
 @router.get("/login")
@@ -354,21 +420,28 @@ async def google_callback(
     
     After user authenticates with Google, this endpoint receives
     the authorization code and exchanges it for user info.
+    
+    SECURITY:
+    - Return URL from state is validated
+    - Session cookie is HttpOnly and Secure in production
+    - Error details are not exposed to user
     """
+    settings = get_settings()
+    
     logger.info("=" * 50)
     logger.info("🔐 GOOGLE CALLBACK RECEIVED")
     logger.info(f"Code received: {bool(code)}")
     logger.info(f"State: {state}")
     logger.info(f"Error: {error}")
-    logger.info(f"Error description: {error_description}")
     logger.info("=" * 50)
     
-    # Determine return URL from state
-    return_url = state if state and state.startswith('/') else "/ui"
+    # SECURITY: Validate return URL from state
+    return_url = validate_return_url(state) if state else "/ui"
     
     if error:
         logger.error(f"OAuth error from Google: {error} - {error_description}")
-        return RedirectResponse(url=f"/auth/page?error={quote(error_description or error)}&return_url={quote(return_url)}")
+        # SECURITY: Use generic error message, don't expose details
+        return RedirectResponse(url=f"/auth/page?error=Authentication+failed&return_url={quote(return_url)}")
     
     if not code:
         logger.error("No authorization code received")
@@ -378,17 +451,15 @@ async def google_callback(
         auth = get_auth_manager()
         redirect_uri = str(request.url_for("google_callback"))
         
-        logger.info(f"Exchanging code for tokens...")
-        logger.info(f"Redirect URI for token exchange: {redirect_uri}")
+        logger.info("Exchanging code for tokens...")
         
         # Exchange code for user info
         result = await auth.handle_google_callback(code, redirect_uri, state)
         
-        logger.info(f"Token exchange result: {list(result.keys())}")
-        
         if "error" in result:
             logger.error(f"OAuth callback failed: {result['error']}")
-            return RedirectResponse(url=f"/auth/page?error={quote(result['error'])}&return_url={quote(return_url)}")
+            # SECURITY: Generic error message
+            return RedirectResponse(url=f"/auth/page?error=Authentication+failed&return_url={quote(return_url)}")
         
         # Set session cookie and redirect
         user = result["user"]
@@ -398,21 +469,23 @@ async def google_callback(
         logger.info(f"Redirecting to: {return_url}")
         
         response = RedirectResponse(url=f"{return_url}?auth_success=true")
+        
+        # SECURITY: Set secure cookie
         response.set_cookie(
             key="session_token",
             value=token,
             httponly=True,
-            max_age=7 * 24 * 60 * 60,  # 7 days
-            samesite="lax"
+            secure=settings.is_production,  # HTTPS only in production
+            samesite="lax",
+            max_age=7 * 24 * 60 * 60  # 7 days
         )
         
         return response
         
     except Exception as e:
         logger.error(f"Exception in callback: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return RedirectResponse(url=f"/auth/page?error={quote(str(e))}&return_url={quote(return_url)}")
+        # SECURITY: Don't expose internal errors
+        return RedirectResponse(url=f"/auth/page?error=Authentication+error&return_url={quote(return_url)}")
 
 
 @router.get("/logout")
