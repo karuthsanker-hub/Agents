@@ -2,11 +2,18 @@
 System Router
 =============
 System endpoints for health checks, stats, and database info.
+
+SECURITY:
+- Health checks are public (needed for monitoring)
+- Database info requires authentication
+
+Author: Shiv Sanker
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.agent import get_agent
 from app.core.logging_config import api_logger as logger
+from app.core.security import get_current_user
 
 router = APIRouter(tags=["System"])
 
@@ -44,17 +51,25 @@ async def health_check():
 
 
 @router.get("/stats")
-async def get_stats():
-    """Get agent statistics."""
-    logger.info("Stats requested")
+async def get_stats(user: dict = Depends(get_current_user)):
+    """
+    Get agent statistics.
+    
+    REQUIRES AUTHENTICATION.
+    """
+    logger.info(f"Stats requested by {user['email']}")
     agent = get_agent()
     return agent.get_stats()
 
 
 @router.get("/db-info")
-async def get_db_info():
-    """Get detailed information about all databases."""
-    logger.info("Database info requested")
+async def get_db_info(user: dict = Depends(get_current_user)):
+    """
+    Get detailed information about all databases.
+    
+    REQUIRES AUTHENTICATION.
+    """
+    logger.info(f"Database info requested by {user['email']}")
     
     agent = get_agent()
     memory = agent.memory

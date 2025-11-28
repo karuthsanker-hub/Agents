@@ -2,9 +2,16 @@
 Articles Router
 ===============
 Endpoints for debate article management.
+
+SECURITY:
+- Write operations require authentication
+- Read operations are public for now (can be changed)
+- Expensive operations (GPT analysis) require auth + rate limit
+
+Author: Shiv Sanker
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -12,6 +19,7 @@ from app.debate.article_manager import ArticleManager
 from app.debate.article_analyzer import ArticleAnalyzer
 from app.debate.seed_articles import get_seed_articles
 from app.core.logging_config import api_logger as logger
+from app.core.security import get_current_user, require_auth_and_rate_limit, get_current_user_optional
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
 
@@ -58,14 +66,19 @@ class ArticleUpdateRequest(BaseModel):
 # ==================== Endpoints ====================
 
 @router.post("/add")
-async def add_article(request: ArticleAddRequest):
+async def add_article(
+    request: ArticleAddRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
     """
     Add and analyze a new article from URL.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API for analysis).
     
     The article will be fetched, analyzed by GPT, and stored in the database.
     Paywalled articles will be skipped.
     """
-    logger.info(f"Adding article: {request.url}")
+    logger.info(f"Adding article by {user['email']}: {request.url}")
     
     manager = get_article_manager()
     analyzer = get_article_analyzer()
@@ -217,9 +230,14 @@ async def get_article(article_id: int):
 
 
 @router.post("/search")
-async def search_articles(request: ArticleSearchRequest):
+async def search_articles(
+    request: ArticleSearchRequest,
+    user: dict = Depends(get_current_user)
+):
     """
     Semantic search for articles.
+    
+    REQUIRES AUTHENTICATION.
     
     Search by meaning, not just keywords.
     Example: "Russia military threat" finds articles about Arctic security.
@@ -261,9 +279,16 @@ async def update_article(article_id: int, request: ArticleUpdateRequest):
 
 
 @router.delete("/{article_id}")
-async def delete_article(article_id: int):
-    """Delete an article from the library."""
-    logger.info(f"Deleting article: id={article_id}")
+async def delete_article(
+    article_id: int,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Delete an article from the library.
+    
+    REQUIRES AUTHENTICATION.
+    """
+    logger.info(f"Deleting article by {user['email']}: id={article_id}")
     
     manager = get_article_manager()
     deleted = manager.delete_article(article_id)
@@ -277,9 +302,14 @@ async def delete_article(article_id: int):
 
 
 @router.post("/{article_id}/analyze")
-async def analyze_article(article_id: int):
+async def analyze_article(
+    article_id: int,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
     """
     Analyze or re-analyze an article using GPT.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API).
     
     Useful for articles added via seed that haven't been fully analyzed.
     """
@@ -328,9 +358,14 @@ async def analyze_article(article_id: int):
 
 
 @router.post("/{article_id}/fetch")
-async def fetch_article_content(article_id: int):
+async def fetch_article_content(
+    article_id: int,
+    user: dict = Depends(get_current_user)
+):
     """
     Fetch the actual content of an article from its URL.
+    
+    REQUIRES AUTHENTICATION.
     
     Returns raw text content for card cutting. Does not analyze.
     Useful for cutting cards from articles that haven't been analyzed yet.
@@ -383,9 +418,11 @@ async def fetch_article_content(article_id: int):
 
 
 @router.post("/seed")
-async def seed_articles():
+async def seed_articles(user: dict = Depends(get_current_user)):
     """
-    Seed the database with 30 starter Arctic articles.
+    Seed the database with 40 starter Arctic articles.
+    
+    REQUIRES AUTHENTICATION.
     
     Articles are added with basic metadata. Use /articles/{id}/analyze 
     to get full GPT analysis for individual articles.
@@ -451,9 +488,14 @@ class ExtractCardsRequest(BaseModel):
 
 
 @router.post("/cards/format")
-async def format_card(request: FormatCardRequest):
+async def format_card(
+    request: FormatCardRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
     """
     Format evidence into a proper debate card.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API).
     
     Takes raw evidence text and citation info, returns formatted card with:
     - AI-generated tag (one-line claim)
@@ -487,9 +529,14 @@ async def format_card(request: FormatCardRequest):
 
 
 @router.post("/cards/extract")
-async def extract_cards(request: ExtractCardsRequest):
+async def extract_cards(
+    request: ExtractCardsRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
     """
     Extract debate cards from a longer document.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API).
     
     Uses AI to identify the best quotable sections and suggest tags.
     Returns cards with passages that need citations added.

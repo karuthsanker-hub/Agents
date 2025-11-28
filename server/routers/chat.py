@@ -3,14 +3,19 @@ Chat Router
 ===========
 Endpoints for the Research Assistant chat functionality.
 Supports text attachments for document analysis.
+
+SECURITY: All endpoints require authentication.
+
+Author: Shiv Sanker
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
 from app.agent import get_agent
 from app.core.logging_config import api_logger as logger
+from app.core.security import get_current_user, require_auth_and_rate_limit
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -44,9 +49,14 @@ class SearchRequest(BaseModel):
 # ==================== Endpoints ====================
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
     """
     Send a message to the Research Assistant.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API).
     
     - **message**: Your question or message
     - **session_id**: Optional session ID for conversation continuity
@@ -54,6 +64,7 @@ async def chat(request: ChatRequest):
     - **use_memory**: Whether to search semantic memory (default: true)
     - **attachment_text**: Optional text content to analyze (pasted document, article, etc.)
     """
+    logger.info(f"Chat from user: {user['email']}")
     # Combine message with attachment if provided
     full_message = request.message
     if request.attachment_text:
@@ -86,9 +97,16 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/search")
-async def search_memories(request: SearchRequest):
-    """Search semantic memory for relevant past conversations."""
-    logger.info(f"Memory search: query={request.query[:50]}...")
+async def search_memories(
+    request: SearchRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Search semantic memory for relevant past conversations.
+    
+    REQUIRES AUTHENTICATION.
+    """
+    logger.info(f"Memory search by {user['email']}: query={request.query[:50]}...")
     
     agent = get_agent()
     memories = agent.search_memories(request.query, request.n_results)
@@ -98,9 +116,20 @@ async def search_memories(request: SearchRequest):
 
 
 @router.get("/history/{session_id}")
-async def get_history(session_id: str, limit: int = 20):
-    """Get conversation history for a session."""
-    logger.info(f"History request: session={session_id}, limit={limit}")
+async def get_history(
+    session_id: str,
+    limit: int = 20,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get conversation history for a session.
+    
+    REQUIRES AUTHENTICATION.
+    """
+    logger.info(f"History request by {user['email']}: session={session_id}")
+    
+    # Security: Limit to reasonable range
+    limit = min(max(1, limit), 100)
     
     agent = get_agent()
     history = agent.get_history(session_id, limit)
