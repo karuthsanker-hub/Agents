@@ -31,9 +31,12 @@ COPY . .
 # Create directories for persistent data
 RUN mkdir -p /app/chroma_db /app/logs
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Railway uses PORT environment variable
 EXPOSE ${PORT}
 
 # Run the application (Railway sets PORT)
-CMD python -m uvicorn server.main:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "start.sh"]
 
