@@ -69,6 +69,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           GOOGLE_CLIENT_ID: test-client-id
           GOOGLE_CLIENT_SECRET: test-client-secret
+          ALLOWED_EMAILS: test@example.com
           APP_ENV: testing
         run: |
           pytest tests/ -v --tb=short --ignore=tests/test_environment.py
@@ -80,6 +81,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           GOOGLE_CLIENT_ID: test-client-id
           GOOGLE_CLIENT_SECRET: test-client-secret
+          ALLOWED_EMAILS: test@example.com
           APP_ENV: testing
         run: |
           pytest tests/test_api.py -v --cov=app --cov=server --cov-report=xml --cov-report=term-missing --ignore=tests/test_environment.py
