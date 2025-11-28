@@ -1,0 +1,15 @@
+# Railway Configuration for Arctic Debate Card Agent
+# Author: Shiv Sanker
+# 
+# This tells Railway how to build and run your app
+
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "python -m uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
