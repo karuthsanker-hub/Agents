@@ -1,0 +1,48 @@
+﻿# Arctic Debate Card Agent Dependencies
+# Author: Shiv Sanker
+# =====================================
+
+# Core Framework
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# AI & LLM
+openai>=1.0.0
+langchain-openai>=0.0.5
+
+# Database & Cache
+psycopg2-binary>=2.9.0
+redis>=4.5.0
+sqlalchemy>=2.0.0
+bcrypt>=4.0.0
+
+# Vector Databases
+chromadb>=0.4.0
+pinecone>=2.0.0
+
+# Authentication
+authlib>=1.2.0
+httpx>=0.24.0
+itsdangerous>=2.1.0
+
+# Web Scraping & PDF
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+pypdf>=3.0.0
+requests>=2.31.0
+
+# Browser Automation
+playwright>=1.40.0
+browser-use>=0.1.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Development
+black>=23.0.0
+ruff>=0.1.0

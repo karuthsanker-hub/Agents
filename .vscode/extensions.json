@@ -1,0 +1,59 @@
+{
+  // Recommended Extensions for Agentic AI & Full-Stack Development
+  "recommendations": [
+    // ===== PYTHON DEVELOPMENT =====
+    "ms-python.python",                    // Python language support
+    "ms-python.vscode-pylance",            // Fast Python IntelliSense
+    "ms-python.black-formatter",           // Black code formatter
+    "charliermarsh.ruff",                  // Fast Python linter (replaces flake8, isort)
+    "ms-python.debugpy",                   // Python debugger
+
+    // ===== AI & CURSOR ENHANCEMENTS =====
+    "github.copilot",                      // GitHub Copilot (optional, works with Cursor)
+
+    // ===== WEB DEVELOPMENT =====
+    "esbenp.prettier-vscode",              // Code formatter for JS/TS/HTML/CSS
+    "dbaeumer.vscode-eslint",              // JavaScript/TypeScript linting
+    "bradlc.vscode-tailwindcss",           // Tailwind CSS IntelliSense
+    "formulahendry.auto-close-tag",        // Auto close HTML/JSX tags
+    "formulahendry.auto-rename-tag",       // Auto rename paired HTML/JSX tags
+    "christian-kohler.path-intellisense",  // Path autocomplete
+
+    // ===== API DEVELOPMENT =====
+    "humao.rest-client",                   // REST API testing in VS Code
+    "42crunch.vscode-openapi",             // OpenAPI/Swagger support
+
+    // ===== GIT & VERSION CONTROL =====
+    "eamodio.gitlens",                     // Git supercharged
+    "mhutchie.git-graph",                  // Git graph visualization
+
+    // ===== DATABASE =====
+    "mtxr.sqltools",                       // SQL tools
+    "mtxr.sqltools-driver-pg",             // PostgreSQL driver
+
+    // ===== PRODUCTIVITY =====
+    "pkief.material-icon-theme",           // Material file icons
+    "zhuangtongfa.material-theme",         // One Dark Pro theme
+    "aaron-bond.better-comments",          // Highlighted comments
+    "usernamehw.errorlens",                // Inline error display
+    "streetsidesoftware.code-spell-checker", // Spell checker
+    "gruntfuggly.todo-tree",               // TODO/FIXME tracker
+
+    // ===== DOCKER & DEVOPS =====
+    "ms-azuretools.vscode-docker",         // Docker support
+    "ms-vscode-remote.remote-containers",  // Dev containers
+    "redhat.vscode-yaml",                  // YAML support
+
+    // ===== MARKDOWN & DOCS =====
+    "yzhang.markdown-all-in-one",          // Markdown support
+    "bierner.markdown-preview-github-styles", // GitHub-style preview
+
+    // ===== TESTING =====
+    "ms-playwright.playwright",            // Playwright test runner
+
+    // ===== ENVIRONMENT =====
+    "mikestead.dotenv"                     // .env file support
+  ],
+  "unwantedRecommendations": []
+}
+

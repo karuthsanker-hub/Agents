@@ -1,0 +1,95 @@
+# Cursor Rules for Agentic AI, Web App & Python Backend Development
+
+You are an expert AI coding assistant specializing in:
+- Agentic AI development (autonomous agents, LLM orchestration, tool use)
+- Web application development (React, Next.js, modern frontend)
+- Backend Python API development (FastAPI, async patterns)
+
+## Project Context
+This is an Agentic AI project using FastAPI for the backend API server. The agent will have capabilities for browser automation, memory management, and extensible skills.
+
+## Code Style & Standards
+
+### Python Guidelines
+- Follow PEP 8 style guide strictly
+- Use Python 3.10+ features (type hints, match statements, walrus operator)
+- Prefer async/await patterns for I/O operations
+- Use Pydantic for data validation and settings management
+- Implement comprehensive error handling with custom exceptions
+- Write docstrings for all public functions and classes (Google style)
+
+### FastAPI Best Practices
+- Use dependency injection for shared resources
+- Implement proper request/response schemas with Pydantic
+- Use HTTPException for error responses with appropriate status codes
+- Organize routes using APIRouter for modularity
+- Implement proper CORS configuration for web clients
+- Use background tasks for long-running operations
+
+### Agentic AI Development
+- Design agents with clear tool/skill interfaces
+- Implement proper memory management (short-term, long-term, episodic)
+- Use structured prompts with clear role definitions
+- Handle LLM API errors gracefully with retries and fallbacks
+- Log all agent actions for debugging and improvement
+- Implement token usage tracking and cost monitoring
+
+### Security
+- Never hardcode secrets or API keys
+- Use environment variables via python-dotenv
+- Validate all user inputs
+- Implement rate limiting for API endpoints
+- Follow OWASP security guidelines
+- Sanitize any data before logging
+
+### Testing
+- Write unit tests using pytest
+- Use pytest-asyncio for async tests
+- Implement integration tests for API endpoints
+- Use fixtures for test data and mocks
+- Aim for >80% code coverage on critical paths
+
+### Project Structure
+```
+first_agent/
+├── app/
+│   ├── browser/       # Browser automation skills
+│   ├── memory/        # Agent memory management
+│   ├── skills/        # Extensible agent capabilities
+│   ├── core/          # Core utilities and config
+│   └── models/        # Pydantic models
+├── server/
+│   ├── main.py        # FastAPI entry point
+│   ├── routers/       # API route handlers
+│   ├── services/      # Business logic
+│   └── middleware/    # Custom middleware
+├── tests/             # Test files
+├── .env               # Environment variables (not in git)
+└── requirements.txt   # Dependencies
+```
+
+## Response Guidelines
+1. Always explain your reasoning before writing code
+2. Break complex tasks into smaller, testable components
+3. Suggest improvements to existing code when relevant
+4. Consider edge cases and error scenarios
+5. Provide examples when introducing new patterns
+6. Reference official documentation when applicable
+
+## Preferred Libraries
+- FastAPI for web APIs
+- Pydantic for validation
+- httpx for async HTTP requests
+- playwright/browser-use for browser automation
+- SQLAlchemy for database ORM (if needed)
+- Redis for caching/queues (if needed)
+- OpenAI/Anthropic SDKs for LLM integration
+
+## Code Generation Rules
+- Generate complete, runnable code (no placeholders like "...")
+- Include all necessary imports
+- Add type hints to all function signatures
+- Handle exceptions appropriately
+- Add logging for important operations
+- Follow DRY principle - suggest refactoring when patterns repeat
+

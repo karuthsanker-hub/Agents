@@ -1,0 +1,114 @@
+# ===========================================
+# Git Ignore for Python/AI Agent Project
+# ===========================================
+
+# ----- Environment & Secrets -----
+.env
+.env.local
+.env.*.local
+*.pem
+secrets/
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ----- Virtual Environments -----
+venv/
+ENV/
+env/
+.venv/
+
+# ----- Testing -----
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ----- Type Checking -----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ----- Linting -----
+.ruff_cache/
+
+# ----- IDEs -----
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ----- OS Files -----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----- Logs -----
+*.log
+logs/
+
+# ----- Database -----
+*.db
+*.sqlite3
+*.sqlite
+
+# ----- Vector DB / AI -----
+chroma_db/
+*.faiss
+*.pkl
+
+# ----- Node (if frontend) -----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+
+# ----- Docker -----
+.docker/
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+
+# ----- Temporary -----
+tmp/
+temp/
+*.tmp
+*.bak
+
+# ----- Build artifacts -----
+*.manifest
+*.spec
+
