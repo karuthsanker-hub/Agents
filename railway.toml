@@ -1,15 +1,11 @@
 # Railway Configuration for Arctic Debate Card Agent
 # Author: Shiv Sanker
-# 
-# This tells Railway how to build and run your app
 
 [build]
 builder = "dockerfile"
 
 [deploy]
-startCommand = "sh start.sh"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-

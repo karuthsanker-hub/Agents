@@ -7,7 +7,6 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
 
 # Set work directory
 WORKDIR /app
@@ -31,12 +30,8 @@ COPY . .
 # Create directories for persistent data
 RUN mkdir -p /app/chroma_db /app/logs
 
-# Make start script executable
-RUN chmod +x start.sh
+# Expose port (Railway sets PORT env var)
+EXPOSE 8000
 
-# Railway uses PORT environment variable
-EXPOSE ${PORT}
-
-# Run the application (Railway sets PORT)
-CMD ["sh", "start.sh"]
-
+# Default command - Railway overrides this via Procfile
+CMD ["python", "-m", "uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000"]
