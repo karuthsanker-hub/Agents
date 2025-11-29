@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.logging_config import setup_logging, api_logger as logger
 from app.core.config import get_settings
@@ -66,9 +67,10 @@ settings = get_settings()
 
 # Define allowed origins based on environment
 if settings.app_env == "production":
-    # In production, only allow specific origins
+    # In production, allow Railway domain and any custom domains
     allowed_origins = [
-        "https://yourdomain.com",  # Update with your actual domain
+        "https://determined-nurturing-production.up.railway.app",
+        "https://*.up.railway.app",  # Allow all Railway subdomains
     ]
 else:
     # In development, allow localhost
@@ -77,6 +79,10 @@ else:
         "http://127.0.0.1:8000",
         "http://localhost:3000",  # If using separate frontend
     ]
+
+# Trust proxy headers (Railway runs behind a proxy)
+# This ensures request.url uses https:// correctly
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 app.add_middleware(
     CORSMiddleware,
