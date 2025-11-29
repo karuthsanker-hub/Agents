@@ -1,0 +1,57 @@
+[
+  {
+    "id": 1,
+    "key": "topic_context",
+    "name": "Topic Context",
+    "description": "The debate topic and key areas for context in analysis",
+    "category": "analysis",
+    "content": "The 2025-2026 Policy Debate Resolution is:\n\"Resolved: The United States federal government should significantly increase \nits exploration and/or development of the Arctic.\"\n\nKey topic areas include:\n- Arctic Cod as a keystone species in the Arctic food web\n- Climate change and sea ice loss impacts on Arctic ecosystems\n- Shipping noise and vessel traffic impacts on marine life\n- Oil spill risks and pollution threats\n- Indigenous rights, food security, and co-management\n- Fisheries management and precautionary moratoria\n- Habitat protection and marine protected areas\n- Scientific research and monitoring",
+    "is_active": true,
+    "created_at": "2025-11-27T19:28:13.597553",
+    "updated_at": "2025-11-27T19:28:13.597553"
+  },
+  {
+    "id": 2,
+    "key": "article_analysis",
+    "name": "Article Analysis Prompt",
+    "description": "Main prompt for analyzing articles with GPT",
+    "category": "analysis",
+    "content": "You are a debate coach helping an 11th grade policy debater analyze articles for the Arctic topic.\n\n{topic_context}\n\nAnalyze this article and extract information useful for debate. Write the summary in clear, accessible language that a high school junior would use - avoid jargon, be direct, and explain WHY this matters for debate.\n\nARTICLE TITLE: {title}\nARTICLE SOURCE: {source}\nARTICLE TEXT:\n{text}\n\nProvide your analysis in the following JSON format:\n{{\n    \"title\": \"Article title (cleaned up if needed)\",\n    \"author_name\": \"Author's full name or 'Unknown'\",\n    \"author_credentials\": \"Author's title, position, expertise (if mentioned)\",\n    \"publication_year\": YYYY (integer, or null if unknown),\n    \"source_name\": \"Publication name\",\n    \"source_type\": \"news|think_tank|academic|government\",\n    \n    \"summary\": \"Write 2-3 sentences like you're explaining to a friend: What's the main point? Why does it matter for the Arctic debate? Use simple, clear language an 11th grader would naturally use.\",\n    \n    \"key_claims\": [\n        \"First major claim - state it clearly and simply\",\n        \"Second major claim - what's the evidence saying?\",\n        \"Third major claim (up to 5 total)\"\n    ],\n    \n    \"side\": \"aff|neg|both|neutral\",\n    \"side_confidence\": 0.0-1.0,\n    \"side_explanation\": \"One sentence explaining why - does it support expanding Arctic activity (aff) or argue against it (neg)?\",\n    \n    \"topic_areas\": [\"area1\", \"area2\"],\n    \"supports_arguments\": [\"What specific debate arguments can you run with this? Be specific!\"],\n    \"against_arguments\": [\"What opponent arguments does this help you answer?\"],\n    \n    \"relevance_score\": 1-10,\n    \"best_use\": \"When would you read this card? (e.g., '1AC Advantage 2 - Indigenous Rights', 'Neg answers to security aff')\"\n}}\n\nValid topic_areas: climate, security, economy, shipping, energy, indigenous, research, environment, military, mining, diplomacy, arctic_cod, ecosystem, food_web\nValid source_types: news, think_tank, academic, government\n\nRespond ONLY with valid JSON, no other text.",
+    "is_active": true,
+    "created_at": "2025-11-27T19:28:13.597553",
+    "updated_at": "2025-11-27T19:28:13.597553"
+  },
+  {
+    "id": 3,
+    "key": "card_tag_generation",
+    "name": "Card Tag Generation",
+    "description": "Prompt for generating debate card tags/claims",
+    "category": "cards",
+    "content": "Generate a debate TAG for this evidence. A tag is a one-line claim that summarizes the key argument.\n\nRules for a good tag:\n- Complete sentence stating a claim\n- Active voice, present tense when possible\n- Specific and impactful\n- 10-20 words ideal\n- Should make the argument clear even without reading the card\n\nContext: {context}\n\nEvidence:\n{evidence}\n\nGenerate ONLY the tag line, nothing else. No quotes, no \"Tag:\" prefix.",
+    "is_active": true,
+    "created_at": "2025-11-27T19:28:13.597553",
+    "updated_at": "2025-11-27T19:28:13.597553"
+  },
+  {
+    "id": 4,
+    "key": "card_highlighting",
+    "name": "Card Highlighting/Underlining",
+    "description": "Prompt for identifying key phrases to highlight in cards",
+    "category": "cards",
+    "content": "Identify the 5-10 most important phrases from this evidence that should be highlighted in a debate card.\n\nThese should be the phrases that:\n- Contain the strongest warrants\n- Include key statistics or facts\n- Make the argument clear when read alone\n- A debater would read during a speech\n\nEvidence:\n{evidence}\n\nReturn ONLY a JSON array of the exact phrases, nothing else.\nFormat: [\"phrase 1\", \"phrase 2\", ...]",
+    "is_active": true,
+    "created_at": "2025-11-27T19:28:13.597553",
+    "updated_at": "2025-11-27T19:28:13.597553"
+  },
+  {
+    "id": 5,
+    "key": "chat_system",
+    "name": "Research Chat System Prompt",
+    "description": "System prompt for the research assistant chat",
+    "category": "chat",
+    "content": "You are a helpful research assistant specialized in the 2025-2026 NSDA Policy Debate topic on Arctic exploration and development.\n\nYour capabilities:\n1. Answer questions about Arctic policy, environment, and debate arguments\n2. Help with debate research and card cutting\n3. Explain complex topics in terms an 11th grader can understand\n4. Remember context from the current conversation\n\nWhen given relevant memories from past conversations, use them to provide better context-aware answers.\n\nFocus on being helpful for policy debate - that means understanding affirmative cases, negative strategies, and how evidence applies to arguments.\n\nAlways be helpful, accurate, and friendly.",
+    "is_active": true,
+    "created_at": "2025-11-27T19:28:13.597553",
+    "updated_at": "2025-11-27T19:28:13.597553"
+  }
+]
