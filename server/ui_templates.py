@@ -1114,6 +1114,7 @@ def get_main_ui(app_version: str, release_notes_json: str) -> str:
             // SECURITY: Escape topic areas to prevent XSS
             const topics = (a.topic_areas || []).slice(0, 3).map(t => `<span class="tag topic">${escapeHtml(t)}</span>`).join('');
             const processed = a.is_processed ? '✅' : '⏳';
+            const hasEvidence = a.evidence_context ? '📝' : '';
             const isSelected = selectedArticles.has(a.id);
             
             // SECURITY: Escape user-generated content
@@ -1132,12 +1133,12 @@ def get_main_ui(app_version: str, release_notes_json: str) -> str:
                     <div class="article-side ${escapeHtml(a.side || 'neutral')}">${sideIcon}</div>
                     <div class="article-content" style="flex: 1;">
                         <div class="article-title">${safeTitle}</div>
-                        <div class="article-meta">${safeSource} • ${a.publication_year || '?'} • ${processed}</div>
+                        <div class="article-meta">${safeSource} • ${a.publication_year || '?'} • ${processed} ${hasEvidence}</div>
                         <div class="article-tags">${topics}<span class="tag source">${safeSourceType}</span></div>
                     </div>
                     <div class="article-actions">
                         <button onclick="viewArticle(${a.id})">View</button>
-                        <button onclick="quickCutCard(${a.id})" title="Quick cut card" style="background: linear-gradient(135deg, #ff6b6b, #ffd93d); color: #000;">🃏</button>
+                        <button onclick="quickCutCard(${a.id})" title="Quick cut card${hasEvidence ? ' (evidence ready)' : ''}" style="background: linear-gradient(135deg, #ff6b6b, #ffd93d); color: #000;">🃏${hasEvidence}</button>
                         ${!a.is_processed ? `<button onclick="analyzeArticle(${a.id})">Analyze</button>` : ''}
                     </div>
                 </div>

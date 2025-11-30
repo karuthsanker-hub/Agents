@@ -288,7 +288,7 @@ class ArticleManager:
                 SELECT id, url, title, source_name, source_type, author_name,
                        publication_year, summary, side, side_confidence,
                        topic_areas, relevance_score, is_processed, cards_cut,
-                       discovered_at
+                       discovered_at, evidence_excerpt, evidence_context
                 FROM articles
                 {where_clause}
                 ORDER BY relevance_score DESC NULLS LAST, discovered_at DESC
