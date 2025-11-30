@@ -130,6 +130,37 @@ Return ONLY a JSON array of the exact phrases, nothing else.
 Format: ["phrase 1", "phrase 2", ...]"""
     },
     
+    "passage_extraction": {
+        "name": "Evidence Passage Extraction",
+        "description": "Extracts the original author's text that supports a claim - NOT AI summary",
+        "category": "cards",
+        "content": """You are helping extract the EXACT ORIGINAL TEXT from a source document for a debate card.
+
+CLAIM TO SUPPORT: {claim}
+
+ORIGINAL SOURCE DOCUMENT:
+{source_text}
+
+TASK: Find the passage in the ORIGINAL SOURCE that best supports this claim.
+
+RULES:
+1. Extract VERBATIM text from the source - do NOT paraphrase or summarize
+2. Include 2-3 sentences BEFORE the key point for context
+3. Include 2-3 sentences AFTER the key point for context  
+4. The passage should be 50-300 words (ideal for a debate card)
+5. The extracted text must appear EXACTLY in the source document
+6. If the exact claim isn't in the source, find the closest supporting evidence
+
+Return JSON:
+{{
+    "passage": "The exact verbatim text from the source...",
+    "start_context": "Brief note on what comes before",
+    "relevance": "Why this passage supports the claim"
+}}
+
+Return ONLY valid JSON, nothing else."""
+    },
+    
     "chat_system": {
         "name": "Research Chat System Prompt",
         "description": "System prompt for the research assistant chat",

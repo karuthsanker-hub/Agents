@@ -6,9 +6,10 @@ Separated for cleaner main.py.
 """
 
 
-def get_main_ui() -> str:
+def get_main_ui(app_version: str, release_notes_json: str) -> str:
     """Return the main web UI HTML."""
-    return '''<!DOCTYPE html>
+    # Use string replacement instead of f-string to avoid conflicts with JS template literals
+    html = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -35,12 +36,17 @@ def get_main_ui() -> str:
             background: linear-gradient(135deg, var(--bg-dark) 0%, #16213e 50%, #0f3460 100%);
             min-height: 100vh;
             color: var(--text-primary);
+            transition: filter 0.3s ease;
+        }
+        body.modal-open {
+            overflow: hidden;
+            filter: blur(1px);
         }
         
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         
         /* Header */
-        header { text-align: center; padding: 20px 0; }
+        header { text-align: center; padding: 20px 0; position: relative; }
         h1 {
             font-size: 2.2rem;
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
@@ -49,6 +55,126 @@ def get_main_ui() -> str:
             margin-bottom: 8px;
         }
         .subtitle { color: var(--text-secondary); font-size: 1rem; }
+        .version-pill {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(0,217,255,0.15);
+            border: 1px solid rgba(0,217,255,0.4);
+            color: var(--accent-blue);
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .version-pill:hover {
+            background: rgba(0,217,255,0.25);
+        }
+        .version-pill .info-icon {
+            font-size: 1rem;
+        }
+        .release-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .release-content {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            width: min(600px, 90%);
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        .release-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .release-header h3 { margin: 0; }
+        .release-header button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+        .release-note {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .release-note:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .release-note h4 {
+            font-size: 1rem;
+            margin-bottom: 6px;
+        }
+        .release-note ul {
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+        .evidence-section {
+            background: rgba(255,255,255,0.02);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            margin-top: 18px;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+        .evidence-text {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .evidence-text mark {
+            background: var(--accent-yellow);
+            color: #000;
+        }
+        .evidence-empty {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        .release-modal.active { display: flex; }
+        .release-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 500px;
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+        .release-card h3 { margin-bottom: 8px; }
+        .release-card ul { margin-left: 20px; margin-bottom: 16px; color: var(--text-secondary); }
+        .release-close {
+            text-align: right;
+            margin-bottom: 10px;
+        }
         
         /* Google Login Button */
         .google-login-btn {
@@ -385,7 +511,7 @@ def get_main_ui() -> str:
         }
         .typing span:nth-child(1) { animation-delay: -0.32s; }
         .typing span:nth-child(2) { animation-delay: -0.16s; }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        @keyframes bounce {{ 0%, 80%, 100% {{ transform: scale(0); }} 40% {{ transform: scale(1); }} }}
         
         /* Database Cards */
         .db-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
@@ -418,7 +544,7 @@ def get_main_ui() -> str:
             animation: spin 1s linear infinite;
             margin: 0 auto 16px;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
         
         /* Toast notifications */
         .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1001; }
@@ -432,12 +558,16 @@ def get_main_ui() -> str:
         }
         .toast.success { border-left-color: var(--accent-green); }
         .toast.error { border-left-color: var(--accent-red); }
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } }
+        @keyframes slideIn {{ from {{ transform: translateX(100%); opacity: 0; }} }}
     </style>
 </head>
 <body>
     <div class="container">
         <header>
+            <div class="version-pill" onclick="toggleReleaseNotes()">
+                v__APP_VERSION__
+                <span class="info-icon">ℹ️</span>
+            </div>
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div>
                     <h1>🧊 Arctic Debate Card Agent</h1>
@@ -456,6 +586,16 @@ def get_main_ui() -> str:
                 </div>
             </div>
         </header>
+        
+        <div class="release-modal" id="releaseModal">
+            <div class="release-content">
+                <div class="release-header">
+                    <h3>Release Notes</h3>
+                    <button onclick="toggleReleaseNotes(true)">✕</button>
+                </div>
+                <div id="releaseNotesBody"></div>
+            </div>
+        </div>
         
         <!-- Usage Warning Banner -->
         <div id="usageWarning" class="usage-warning" style="display: none;">
@@ -555,6 +695,7 @@ def get_main_ui() -> str:
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 600;">📝 Evidence Text</label>
                         <textarea id="cardEvidence" placeholder="Paste the evidence/quote here..." style="width: 100%; height: 200px; resize: vertical;"></textarea>
+                        <input type="hidden" id="cardFocusPassage" value="">
                     </div>
                     
                     <!-- Right: Citation Info -->
@@ -681,6 +822,8 @@ def get_main_ui() -> str:
         // ==================== Verbose Logging ====================
         const DEBUG = true;
         const LOG_PREFIX = '🧊 [DebateAgent]';
+        const APP_VERSION = '__APP_VERSION__';
+        const RELEASE_NOTES = __RELEASE_NOTES_JSON__;
         
         const log = {
             info: (...args) => console.log(LOG_PREFIX, '📘', ...args),
@@ -704,6 +847,40 @@ def get_main_ui() -> str:
         
         log.info('Arctic Debate Card Agent - Initializing...');
         log.debug('Debug mode:', DEBUG);
+        
+        function renderReleaseNotes() {
+            const container = document.getElementById('releaseNotesBody');
+            if (!container) return;
+            if (!Array.isArray(RELEASE_NOTES) || RELEASE_NOTES.length === 0) {
+                container.innerHTML = '<p>No release notes available.</p>';
+                return;
+            }
+            container.innerHTML = RELEASE_NOTES.map(note => `
+                <div class="release-note">
+                    <h4>${note.version || ''} • ${note.date || ''}</h4>
+                    <ul>
+                        ${(note.items || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+                    </ul>
+                </div>
+            `).join('');
+        }
+        
+        function toggleReleaseNotes(forceClose = false) {
+            const modal = document.getElementById('releaseModal');
+            if (!modal) return;
+            const isOpen = modal.style.display === 'flex';
+            if (forceClose || isOpen) {
+                modal.style.display = 'none';
+                document.body.classList.remove('modal-open');
+            } else {
+                renderReleaseNotes();
+                modal.style.display = 'flex';
+                document.body.classList.add('modal-open');
+            }
+        }
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') toggleReleaseNotes(true);
+        });
         
         // ==================== State Management ====================
         let sessionId = 'session_' + Math.random().toString(36).substr(2, 9);
@@ -1054,8 +1231,16 @@ def get_main_ui() -> str:
                         <button class="btn btn-secondary" onclick="fetchAndCutCard(${a.id})">📥 Fetch & Cut</button>
                         <button class="btn btn-danger" onclick="deleteArticle(${a.id}); closeModal();">Delete</button>
                     </div>
+                    <div class="evidence-section">
+                        <div class="section-header">
+                            <strong>Stored Evidence</strong>
+                            <button class="btn btn-secondary" onclick="generateEvidence(${a.id})">✨ Generate Evidence</button>
+                        </div>
+                        <div id="modalEvidencePreview" class="evidence-empty">Loading...</div>
+                    </div>
                 `;
                 document.getElementById('articleModal').classList.add('active');
+                renderEvidencePreview(a);
             } catch (e) {
                 showToast('Error loading article', 'error');
             }
@@ -1351,85 +1536,208 @@ def get_main_ui() -> str:
         
         // ==================== ARTICLE TO CARD FUNCTIONS ====================
         
-        // Cut card from currently viewed article (uses summary/claims as evidence)
-        function cutCardFromArticle() {
+        function buildClaimText(article) {
+            let claim = '';
+            if (article.summary) {
+                claim += article.summary + ' ';
+            }
+            if (article.key_claims && article.key_claims.length) {
+                claim += article.key_claims.join(' ');
+            }
+            return claim.trim();
+        }
+        
+        async function generateEvidence(articleId, options = {}) {
+            const payload = {};
+            if (options.claimText) payload.claim_override = options.claimText;
+            if (options.fullText) payload.full_text_override = options.fullText;
+            
+            try {
+                const data = await apiCall('POST', `/articles/${articleId}/generate-evidence`, payload);
+                if (data.success) {
+                    if (currentArticle && currentArticle.id === articleId) {
+                        currentArticle.evidence_context = data.evidence_context;
+                        currentArticle.evidence_excerpt = data.evidence_excerpt;
+                        renderEvidencePreview(currentArticle);
+                    }
+                    if (!options.silent) showToast('Evidence generated!', 'success');
+                } else if (!options.silent) {
+                    showToast(data.error || 'Failed to generate evidence', 'error');
+                }
+                return data;
+            } catch (err) {
+                if (!options.silent) showToast(err.message || 'Evidence generation failed', 'error');
+                return { success: false, error: err.message };
+            }
+        }
+        
+        async function ensureArticleEvidence(article, options = {}) {
+            if (!article) return { success: false };
+            if (article.evidence_context) return { success: true };
+            const result = await generateEvidence(article.id, {
+                claimText: options.claimText || buildClaimText(article),
+                silent: options.silent !== undefined ? options.silent : true
+            });
+            if (result.success) {
+                article.evidence_context = result.evidence_context;
+                article.evidence_excerpt = result.evidence_excerpt;
+            }
+            return result;
+        }
+        
+        // Cut card from currently viewed article - NOW EXTRACTS ORIGINAL AUTHOR'S TEXT
+        async function cutCardFromArticle() {
             if (!currentArticle) {
                 showToast('No article loaded', 'error');
                 return;
             }
             
             const a = currentArticle;
-            log.info('=== CUTTING CARD FROM ARTICLE ===');
-            log.debug('Full article data:', JSON.stringify(a, null, 2));
-            log.debug('author_name:', a.author_name);
-            log.debug('source_name:', a.source_name);
-            log.debug('publication_year:', a.publication_year);
-            log.debug('discovered_at:', a.discovered_at);
+            log.info('=== CUTTING CARD FROM ARTICLE (WITH ORIGINAL TEXT) ===');
+            log.debug('Article:', a.id, a.title);
             
-            // Build evidence text from summary and key claims
-            let evidence = '';
-            if (a.summary) {
-                evidence = a.summary;
+            if (a.evidence_context) {
+                populateCardEditor(a, a.evidence_context, a.evidence_excerpt || a.evidence_context);
+                showToast('Loaded stored evidence excerpt!', 'success');
+                return;
             }
+            
+            const ensured = await ensureArticleEvidence(a, { silent: true });
+            if (ensured.success && a.evidence_context) {
+                populateCardEditor(a, a.evidence_context, a.evidence_excerpt || a.evidence_context);
+                showToast('Evidence generated for article!', 'success');
+                return;
+            }
+            
+            showToast('Fetching original content and extracting evidence...', 'info');
+            
+            try {
+                log.info('Step 1: Fetching original content from URL...');
+                const fetchRes = await fetch('/articles/' + a.id + '/fetch', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const fetchData = await fetchRes.json();
+                
+                if (!fetchData.success || !fetchData.content) {
+                    log.warn('Could not fetch original content, using summary as fallback');
+                    // Fall back to old behavior if fetch fails
+                    cutCardFromArticleFallback(a);
+                    return;
+                }
+                
+                log.info('Fetched', fetchData.content.length, 'chars of original content');
+                if (fetchData.title) {
+                    a.title = fetchData.title;
+                }
+                
+                const claimToFind = buildClaimText(a);
+                const generated = await generateEvidence(a.id, {
+                    fullText: fetchData.content,
+                    claimText: claimToFind,
+                    silent: true
+                });
+                
+                if (generated.success && (generated.evidence_context || generated.evidence_excerpt)) {
+                    a.evidence_context = generated.evidence_context;
+                    a.evidence_excerpt = generated.evidence_excerpt;
+                    populateCardEditor(a, generated.evidence_context, generated.evidence_excerpt);
+                    showToast('✅ Original author text extracted! Ready to format.', 'success');
+                } else {
+                    log.warn('Evidence extraction failed, using raw snippet fallback');
+                    populateCardEditor(
+                        a,
+                        fetchData.content.substring(0, 2000),
+                        fetchData.content.substring(0, 500)
+                    );
+                    showToast('⚠️ Could not extract specific passage - using article start', 'warning');
+                }
+                
+            } catch (e) {
+                log.error('Error cutting card:', e);
+                cutCardFromArticleFallback(a);
+            }
+        }
+        
+        // Fallback: use AI summary (old behavior) when original fetch fails
+        function cutCardFromArticleFallback(a) {
+            log.warn('Using fallback (AI summary) for card cutting');
+            
+            let evidence = '';
+            if (a.summary) evidence = a.summary;
             if (a.key_claims && a.key_claims.length) {
                 evidence += '\\n\\n' + a.key_claims.join('\\n');
             }
             if (!evidence) {
-                evidence = 'Article needs to be analyzed first. Click "Analyze with GPT" or use "Fetch & Cut" to get content.';
+                evidence = 'Could not fetch original content. Try "Fetch & Cut" button instead.';
             }
             
+            populateCardEditor(a, evidence, evidence);
+            showToast('⚠️ Using AI summary - click "Fetch & Cut" for original text', 'warning');
+        }
+        
+        // Helper: Populate card editor with article data and evidence
+        function populateCardEditor(a, evidence, focusPassage = '') {
             // Switch to card editor tab
             showTab('cards');
             
             // Extract year - multiple fallbacks
             let year = a.publication_year;
-            log.debug('Year from publication_year:', year);
             if (!year && a.discovered_at) {
                 try {
                     year = new Date(a.discovered_at).getFullYear();
-                    log.debug('Year from discovered_at:', year);
-                } catch (e) {
-                    log.warn('Could not parse discovered_at:', a.discovered_at);
-                }
+                } catch (e) {}
             }
-            if (!year) {
-                year = new Date().getFullYear();
-                log.debug('Using current year:', year);
-            }
+            if (!year) year = new Date().getFullYear();
             
             // Get author - multiple fallbacks
-            let author = a.author_name;
-            log.debug('Author from author_name:', author);
-            if (!author && a.source_name) {
-                author = a.source_name;
-                log.debug('Author from source_name:', author);
-            }
-            if (!author) {
-                author = 'Unknown';
-                log.warn('No author found, using Unknown');
-            }
+            let author = a.author_name || a.source_name || 'Unknown';
             
-            // Populate card editor fields
-            log.info('Setting card fields:', {author, year, title: a.title, source: a.source_name, url: a.url});
-            
+            // Populate fields
             document.getElementById('cardEvidence').value = evidence;
+            document.getElementById('cardFocusPassage').value = focusPassage || evidence || '';
             document.getElementById('cardAuthor').value = author;
             document.getElementById('cardYear').value = year;
             document.getElementById('cardTitle').value = a.title || '';
             document.getElementById('cardSource').value = a.source_name || '';
             document.getElementById('cardUrl').value = a.url || '';
             document.getElementById('cardQuals').value = a.author_credentials || '';
-            document.getElementById('cardContext').value = a.side ? (a.side === 'aff' ? 'Affirmative' : a.side === 'neg' ? 'Negative' : 'Both sides') : '';
-            
-            // Verify fields were set
-            log.debug('Verifying field values after set:');
-            log.debug('  cardAuthor:', document.getElementById('cardAuthor').value);
-            log.debug('  cardYear:', document.getElementById('cardYear').value);
-            log.debug('  cardTitle:', document.getElementById('cardTitle').value);
-            log.debug('  cardSource:', document.getElementById('cardSource').value);
+            document.getElementById('cardContext').value = a.side ? 
+                (a.side === 'aff' ? 'Affirmative' : a.side === 'neg' ? 'Negative' : 'Both sides') : '';
             
             closeModal();
-            showToast('Article loaded into Card Editor - edit evidence and format!', 'success');
+        }
+        
+        async function extractAndPopulateEvidence(article, rawContent, claimText, options = {}) {
+            if (!rawContent || rawContent.length < 100) {
+                populateCardEditor(article, rawContent || '', rawContent || '');
+                return false;
+            }
+            
+            const promptText = (claimText && claimText.trim())
+                ? claimText
+                : rawContent.substring(0, 1200);
+            
+            const generation = await generateEvidence(article.id, {
+                fullText: rawContent,
+                claimText: promptText,
+                silent: true
+            });
+            
+            if (generation.success && (generation.evidence_context || generation.evidence_excerpt)) {
+                article.evidence_context = generation.evidence_context;
+                article.evidence_excerpt = generation.evidence_excerpt;
+                populateCardEditor(article, generation.evidence_context, generation.evidence_excerpt);
+                if (options.successMessage) {
+                    showToast(options.successMessage, 'success');
+                }
+                return true;
+            }
+            
+            if (options.failureMessage) {
+                showToast(options.failureMessage, 'warning');
+            }
+            return false;
         }
         
         // Fetch article content from URL and cut card
@@ -1438,44 +1746,39 @@ def get_main_ui() -> str:
             closeModal();
             
             try {
-                // First get the article info
                 const artRes = await fetch('/articles/' + articleId);
                 const article = await artRes.json();
                 
-                // Fetch the actual article content
                 const fetchRes = await fetch('/articles/' + articleId + '/fetch', {method: 'POST', credentials: 'include'});
                 const fetchData = await fetchRes.json();
                 
-                if (!fetchData.success) {
+                if (!fetchData.success || !fetchData.content) {
                     showToast(fetchData.error || 'Failed to fetch article', 'error');
                     return;
                 }
                 
-                // Switch to card editor
-                showTab('cards');
-                
-                // Get year with fallbacks
-                let year = article.publication_year;
-                if (!year && article.discovered_at) {
-                    year = new Date(article.discovered_at).getFullYear();
-                }
-                if (!year) {
-                    year = new Date().getFullYear();
+                if (fetchData.title) {
+                    article.title = fetchData.title;
                 }
                 
-                // Get author with fallbacks
-                let author = article.author_name || article.source_name || 'Unknown';
+                const claimToFind = buildClaimText(article);
+                const extractionWorked = await extractAndPopulateEvidence(
+                    article,
+                    fetchData.content,
+                    claimToFind,
+                    {
+                        successMessage: '✅ Original author text extracted! Ready to format.',
+                        failureMessage: '⚠️ Could not extract specific passage - using article start'
+                    }
+                );
                 
-                // Populate with fetched content
-                document.getElementById('cardEvidence').value = fetchData.content || '';
-                document.getElementById('cardAuthor').value = author;
-                document.getElementById('cardYear').value = year;
-                document.getElementById('cardTitle').value = fetchData.title || article.title || '';
-                document.getElementById('cardSource').value = article.source_name || '';
-                document.getElementById('cardUrl').value = article.url || '';
-                document.getElementById('cardQuals').value = article.author_credentials || '';
-                
-                showToast(`Fetched ${fetchData.content?.length || 0} chars - extract cards or format!`, 'success');
+                if (!extractionWorked) {
+                    populateCardEditor(
+                        article,
+                        fetchData.content.substring(0, 2000),
+                        fetchData.content.substring(0, 500)
+                    );
+                }
                 
             } catch (e) {
                 showToast('Error fetching article: ' + e.message, 'error');
@@ -1559,6 +1862,7 @@ def get_main_ui() -> str:
             
             // Put combined evidence in card editor
             document.getElementById('cardEvidence').value = combinedEvidence.trim();
+            document.getElementById('cardFocusPassage').value = '';
             document.getElementById('cardContext').value = `Batch: ${selectedArticles.size} articles`;
             
             // Clear selection
@@ -1579,6 +1883,7 @@ def get_main_ui() -> str:
             const quals = document.getElementById('cardQuals').value.trim();
             const context = document.getElementById('cardContext').value.trim();
             const autoHighlight = document.getElementById('autoHighlight').checked;
+            const focusPassage = document.getElementById('cardFocusPassage').value.trim();
             
             if (!evidence) {
                 showToast('Please paste evidence text', 'error');
@@ -1607,6 +1912,7 @@ def get_main_ui() -> str:
                         url: url || null,
                         qualifications: quals || null,
                         argument_context: context || 'Policy debate',
+                        focus_passage: focusPassage || null,
                         generate_tag: true,
                         highlight: autoHighlight
                     })
@@ -1676,6 +1982,32 @@ def get_main_ui() -> str:
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+        
+        function escapeRegExp(str) {
+            return str ? str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') : '';
+        }
+        
+        function highlightExcerpt(context, excerpt) {
+            if (!context) return '';
+            let safeContext = escapeHtml(context);
+            if (excerpt) {
+                const pattern = new RegExp(escapeRegExp(excerpt.trim()), 'i');
+                safeContext = safeContext.replace(pattern, match => `<mark>${match}</mark>`);
+            }
+            return safeContext;
+        }
+        
+        function renderEvidencePreview(article) {
+            const container = document.getElementById('modalEvidencePreview');
+            if (!container) return;
+            if (article?.evidence_context) {
+                container.className = 'evidence-text';
+                container.innerHTML = highlightExcerpt(article.evidence_context, article.evidence_excerpt);
+            } else {
+                container.className = 'evidence-empty';
+                container.textContent = 'No stored evidence yet. Click "Generate Evidence" to extract from the source.';
+            }
         }
         
         async function copyCard() {
@@ -1789,6 +2121,7 @@ def get_main_ui() -> str:
             
             // Populate the form with extracted card data
             document.getElementById('cardEvidence').value = card.passage;
+            document.getElementById('cardFocusPassage').value = card.passage;
             
             // Try to parse author hint
             if (card.author_hint) {
@@ -1889,4 +2222,6 @@ def get_main_ui() -> str:
     </script>
 </body>
 </html>'''
+    # Replace placeholders
+    return html.replace('__APP_VERSION__', app_version).replace('__RELEASE_NOTES_JSON__', release_notes_json)
 

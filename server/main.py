@@ -57,13 +57,25 @@ redoc_url = "/redoc" if settings_for_docs.debug else None
 app = FastAPI(
     title="Arctic Debate Card Agent",
     description="AI-powered research assistant for Policy Debate (2025-2026 Arctic Topic)",
-    version="2.0.0",
+    version=settings_for_docs.app_version,
     docs_url=docs_url,
     redoc_url=redoc_url
 )
 
 # CORS middleware - SECURITY: Restrict origins in production
 settings = get_settings()
+RELEASE_NOTES = [
+    {
+        "version": settings.app_version,
+        "date": "2025-11-29",
+        "items": [
+            "Evidence excerpts now stored with each article, including PDF sources.",
+            "Card formatter auto-detects highlight passages with LLM fallback.",
+            "UI shows deployment version and release notes for quick validation."
+        ]
+    }
+]
+RELEASE_NOTES_JSON = json.dumps(RELEASE_NOTES)
 
 # Define allowed origins based on environment
 if settings.app_env == "production":
@@ -183,7 +195,7 @@ async def web_ui(request: Request):
     Serves the main SPA with authentication state.
     """
     logger.info("UI accessed")
-    return get_main_ui()
+    return get_main_ui(settings.app_version, RELEASE_NOTES_JSON)
 
 
 # ==================== Startup/Shutdown ====================

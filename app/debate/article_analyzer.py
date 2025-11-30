@@ -24,6 +24,7 @@ from app.core.config import get_settings
 from app.core.logging_config import analyzer_logger as logger
 from app.core.admin_config import get_admin_config
 from app.core.prompt_manager import get_prompt_manager
+from app.debate.card_formatter import get_card_formatter
 
 # Trusted domains that are never paywalled
 TRUSTED_DOMAINS = [
@@ -449,6 +450,24 @@ Respond ONLY with valid JSON, no other text."""
             'is_processed': True,
             **analysis
         }
+        
+        # Extract best evidence passage for quick card cutting
+        try:
+            formatter = get_card_formatter()
+            claim_text = " ".join([
+                analysis.get('summary', '') or '',
+                " ".join(analysis.get('key_claims') or [])
+            ]).strip()
+            passage_data = formatter.extract_evidence_passage(
+                original_content=fetch_result['text'],
+                claim_or_summary=claim_text or fetch_result['text'][:500]
+            )
+            result['evidence_excerpt'] = passage_data.get('passage')
+            result['evidence_context'] = passage_data.get('context_passage')
+        except Exception as e:
+            logger.warning(f"Failed to pre-extract passage: {e}")
+            result['evidence_excerpt'] = None
+            result['evidence_context'] = None
         
         return result
 

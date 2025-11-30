@@ -63,6 +63,8 @@ class ArticleManager:
                     full_text TEXT,
                     summary TEXT,
                     key_claims JSONB,
+                    evidence_excerpt TEXT,
+                    evidence_context TEXT,
                     
                     -- Debate Classification
                     side VARCHAR(20),
@@ -89,6 +91,15 @@ class ArticleManager:
                 CREATE INDEX IF NOT EXISTS idx_articles_source_type ON articles(source_type);
                 CREATE INDEX IF NOT EXISTS idx_articles_processed ON articles(is_processed);
                 CREATE INDEX IF NOT EXISTS idx_articles_relevance ON articles(relevance_score DESC);
+            """)
+            
+            cur.execute("""
+                ALTER TABLE articles
+                ADD COLUMN IF NOT EXISTS evidence_excerpt TEXT;
+            """)
+            cur.execute("""
+                ALTER TABLE articles
+                ADD COLUMN IF NOT EXISTS evidence_context TEXT;
             """)
             
             # Create debate_cards table (for later use)
@@ -140,13 +151,13 @@ class ArticleManager:
                 INSERT INTO articles (
                     url, title, source_name, source_type,
                     author_name, author_credentials, publication_date, publication_year,
-                    full_text, summary, key_claims,
+                    full_text, summary, key_claims, evidence_excerpt, evidence_context,
                     side, side_confidence, topic_areas, supports_arguments, against_arguments,
                     relevance_score, is_processed, is_paywalled, processed_at
                 ) VALUES (
                     %(url)s, %(title)s, %(source_name)s, %(source_type)s,
                     %(author_name)s, %(author_credentials)s, %(publication_date)s, %(publication_year)s,
-                    %(full_text)s, %(summary)s, %(key_claims)s,
+                    %(full_text)s, %(summary)s, %(key_claims)s, %(evidence_excerpt)s, %(evidence_context)s,
                     %(side)s, %(side_confidence)s, %(topic_areas)s, %(supports_arguments)s, %(against_arguments)s,
                     %(relevance_score)s, %(is_processed)s, %(is_paywalled)s, %(processed_at)s
                 )
@@ -154,6 +165,8 @@ class ArticleManager:
                     title = EXCLUDED.title,
                     summary = EXCLUDED.summary,
                     key_claims = EXCLUDED.key_claims,
+                    evidence_excerpt = EXCLUDED.evidence_excerpt,
+                    evidence_context = EXCLUDED.evidence_context,
                     side = EXCLUDED.side,
                     is_processed = EXCLUDED.is_processed,
                     processed_at = EXCLUDED.processed_at
@@ -170,6 +183,8 @@ class ArticleManager:
                 'full_text': article_data.get('full_text'),
                 'summary': article_data.get('summary'),
                 'key_claims': Json(article_data.get('key_claims', [])),
+                'evidence_excerpt': article_data.get('evidence_excerpt'),
+                'evidence_context': article_data.get('evidence_context'),
                 'side': article_data.get('side'),
                 'side_confidence': article_data.get('side_confidence'),
                 'topic_areas': article_data.get('topic_areas', []),
@@ -317,7 +332,7 @@ class ArticleManager:
         allowed_fields = [
             'title', 'summary', 'key_claims', 'side', 'side_confidence',
             'topic_areas', 'supports_arguments', 'against_arguments',
-            'relevance_score', 'is_processed'
+            'relevance_score', 'is_processed', 'full_text'
         ]
         
         set_clauses = []
@@ -341,6 +356,41 @@ class ArticleManager:
             cur.execute(f"""
                 UPDATE articles 
                 SET {', '.join(set_clauses)}
+                WHERE id = %s;
+            """, params)
+            return cur.rowcount > 0
+
+    def update_evidence_fields(
+        self,
+        article_id: int,
+        *,
+        full_text: Optional[str] = None,
+        evidence_excerpt: Optional[str] = None,
+        evidence_context: Optional[str] = None
+    ) -> bool:
+        """Update evidence excerpt/context (and optionally full text)."""
+        set_clauses = []
+        params = []
+        
+        if full_text is not None:
+            set_clauses.append("full_text = %s")
+            params.append(full_text)
+        if evidence_excerpt is not None:
+            set_clauses.append("evidence_excerpt = %s")
+            params.append(evidence_excerpt)
+        if evidence_context is not None:
+            set_clauses.append("evidence_context = %s")
+            params.append(evidence_context)
+        
+        if not set_clauses:
+            return False
+        
+        params.append(article_id)
+        with self.pg_conn.cursor() as cur:
+            cur.execute(f"""
+                UPDATE articles
+                SET {', '.join(set_clauses)},
+                    processed_at = processed_at
                 WHERE id = %s;
             """, params)
             return cur.rowcount > 0

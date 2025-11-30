@@ -11,7 +11,7 @@ Author: Shiv Sanker
 
 import re
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from openai import OpenAI
 
 from app.core.config import get_settings
@@ -55,6 +55,31 @@ Evidence:
 
 Return ONLY a JSON array of the exact phrases, nothing else.
 Format: ["phrase 1", "phrase 2", ...]"""
+
+    DEFAULT_PASSAGE_EXTRACTION_PROMPT = """You are helping extract the EXACT ORIGINAL TEXT from a source document for a debate card.
+
+CLAIM TO SUPPORT: {claim}
+
+ORIGINAL SOURCE DOCUMENT:
+{source_text}
+
+TASK: Find the passage in the ORIGINAL SOURCE that best supports this claim.
+
+RULES:
+1. Extract VERBATIM text from the source - do NOT paraphrase or summarize
+2. Include 2-3 sentences BEFORE the key point for context
+3. Include 2-3 sentences AFTER the key point for context  
+4. The passage should be 50-300 words (ideal for a debate card)
+5. The extracted text must appear EXACTLY in the source document
+
+Return JSON:
+{{
+    "passage": "The exact verbatim text from the source...",
+    "start_context": "Brief note on what comes before",
+    "relevance": "Why this passage supports the claim"
+}}
+
+Return ONLY valid JSON, nothing else."""
     
     def __init__(self):
         settings = get_settings()
@@ -73,6 +98,214 @@ Format: ["phrase 1", "phrase 2", ...]"""
         """Get highlighting prompt from database or fallback."""
         db_prompt = self.prompt_manager.get_prompt("card_highlighting")
         return db_prompt if db_prompt else self.DEFAULT_HIGHLIGHT_PROMPT
+    
+    def _get_passage_extraction_prompt(self) -> str:
+        """Get passage extraction prompt from database or fallback."""
+        db_prompt = self.prompt_manager.get_prompt("passage_extraction")
+        return db_prompt if db_prompt else self.DEFAULT_PASSAGE_EXTRACTION_PROMPT
+    
+    def extract_evidence_passage(
+        self, 
+        original_content: str, 
+        claim_or_summary: str
+    ) -> Dict[str, Any]:
+        """
+        Extract the actual author's text that supports a claim.
+        
+        This finds the most relevant passage from the ORIGINAL source
+        (not AI-generated summary) and extracts it with context.
+        
+        Args:
+            original_content: The full text fetched from the source URL
+            claim_or_summary: The AI summary or claim to find evidence for
+            
+        Returns:
+            {
+                "passage": "Verbatim text from source...",
+                "start_context": "What comes before",
+                "relevance": "Why this supports the claim",
+                "success": True/False
+            }
+        """
+        logger.info("Extracting evidence passage from original source")
+        
+        if not original_content or len(original_content.strip()) < 100:
+            logger.warning("Original content too short for extraction")
+            return {
+                "passage": "",
+                "start_context": "",
+                "relevance": "",
+                "success": False,
+                "error": "Source content too short"
+            }
+        
+        # Check rate limits
+        rate_check = self.admin_config.check_rate_limit()
+        if not rate_check.get('allowed', True):
+            logger.warning(f"Rate limit exceeded: {rate_check.get('reason')}")
+            return {
+                "passage": original_content[:500],
+                "start_context": "Rate limit - using first 500 chars",
+                "relevance": "Automatic fallback",
+                "success": False,
+                "error": rate_check.get('reason')
+            }
+        
+        # Get prompt and format it
+        prompt_template = self._get_passage_extraction_prompt()
+        prompt = prompt_template.format(
+            claim=claim_or_summary[:500],
+            source_text=original_content[:6000]  # Limit to ~6k chars
+        )
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_completion_tokens=1000,
+                temperature=0.2  # Low temp for accuracy
+            )
+            
+            import json
+            result = json.loads(response.choices[0].message.content.strip())
+            
+            # Track usage
+            tokens_used = response.usage.total_tokens if response.usage else 500
+            self.admin_config.track_usage(
+                endpoint="extract_evidence_passage",
+                tokens_used=tokens_used,
+                model=self.model
+            )
+            
+            passage = result.get("passage", "")
+            passage_start = original_content.find(passage) if passage else -1
+            
+            # Verify the passage actually exists in original content
+            if passage and passage_start == -1:
+                logger.warning("Extracted passage not found verbatim in source - trying fuzzy match")
+                # Try to find a close match
+                fuzzy_match, fuzzy_start = self._find_similar_passage(passage, original_content)
+                passage = fuzzy_match
+                passage_start = fuzzy_start
+            
+            context_passage = self._build_context_passage(
+                original_content,
+                passage,
+                passage_start,
+                sentences_before=2,
+                sentences_after=2
+            )
+            
+            return {
+                "passage": passage,
+                "context_passage": context_passage,
+                "start_context": result.get("start_context", ""),
+                "relevance": result.get("relevance", ""),
+                "success": bool(passage)
+            }
+            
+        except Exception as e:
+            logger.error(f"Passage extraction error: {e}")
+            # Fallback: return first relevant chunk
+            fallback_passage = original_content[:500]
+            context_passage = self._build_context_passage(
+                original_content,
+                fallback_passage,
+                0,
+                sentences_before=0,
+                sentences_after=2
+            )
+            return {
+                "passage": fallback_passage,
+                "context_passage": context_passage,
+                "start_context": "Extraction failed - using start of document",
+                "relevance": "Automatic fallback",
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _find_similar_passage(self, target: str, source: str, threshold: int = 50) -> Tuple[str, int]:
+        """
+        Find the most similar passage in source to target text.
+        
+        Returns the passage and its starting index.
+        """
+        target_words = set(w.lower() for w in target.split() if len(w) > 3)
+        if not target_words:
+            return "", -1
+        
+        source_words = source.split()
+        best_match = ""
+        best_score = 0
+        best_start = -1
+        window_size = max(len(target.split()), 10)
+        
+        for i in range(len(source_words) - window_size + 1):
+            window = source_words[i:i + window_size]
+            window_set = set(w.lower() for w in window if len(w) > 3)
+            overlap = len(target_words & window_set)
+            score = overlap / len(target_words) * 100
+            
+            if score > best_score and score >= threshold:
+                best_score = score
+                start_word_index = max(0, i - 20)
+                end_word_index = min(len(source_words), i + window_size + 20)
+                best_match = " ".join(source_words[start_word_index:end_word_index])
+                
+                # Approximate original character index
+                char_index = len(" ".join(source_words[:start_word_index]))
+                best_start = char_index
+        
+        return best_match, best_start
+    
+    def _build_context_passage(
+        self,
+        source_text: str,
+        passage: str,
+        passage_start: int,
+        sentences_before: int = 2,
+        sentences_after: int = 2
+    ) -> str:
+        """
+        Build a contextual passage with sentences before and after the key passage.
+        """
+        if not passage:
+            return ""
+        
+        if passage_start < 0:
+            passage_start = source_text.find(passage)
+        if passage_start < 0:
+            passage_start = 0
+        
+        sentence_pattern = re.compile(r'[^.!?]*[.!?]|[^.!?]+$')
+        sentences = [(match.group().strip(), match.start(), match.end()) for match in sentence_pattern.finditer(source_text)]
+        
+        if not sentences:
+            return passage
+        
+        passage_sentence_index = None
+        for idx, (_, start, end) in enumerate(sentences):
+            if start <= passage_start < end:
+                passage_sentence_index = idx
+                break
+        
+        if passage_sentence_index is None:
+            # Fallback to simple window
+            start_idx = max(0, passage_start - 400)
+            end_idx = min(len(source_text), passage_start + len(passage) + 400)
+            context = source_text[start_idx:end_idx]
+            return context.strip()
+        
+        start_sentence = max(0, passage_sentence_index - sentences_before)
+        end_sentence = min(len(sentences), passage_sentence_index + sentences_after + 1)
+        
+        context_sentences = [sentences[i][0] for i in range(start_sentence, end_sentence)]
+        context_text = " ".join(context_sentences).strip()
+        
+        if passage not in context_text and passage.strip():
+            context_text = f"{context_text}\n{passage}" if context_text else passage
+        
+        return context_text.strip()
     
     def format_citation(
         self,
@@ -169,7 +402,27 @@ Format: ["phrase 1", "phrase 2", ...]"""
             logger.error(f"Tag generation error: {e}")
             return "Evidence supports the argument"
     
-    def highlight_card(self, full_text: str, key_phrases: Optional[List[str]] = None) -> Dict[str, str]:
+    def _mark_phrase(self, text: str, phrase: str) -> Tuple[str, bool]:
+        """Underline phrase in text (case-insensitive, first occurrence only)."""
+        if not phrase:
+            return text, False
+        phrase = phrase.strip()
+        if not phrase:
+            return text, False
+        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+        match = pattern.search(text)
+        if not match:
+            return text, False
+        start, end = match.span()
+        marked = text[:start] + f"__{text[start:end]}__" + text[end:]
+        return marked, True
+    
+    def highlight_card(
+        self,
+        full_text: str,
+        key_phrases: Optional[List[str]] = None,
+        focus_passage: Optional[str] = None
+    ) -> Dict[str, str]:
         """
         Generate highlighted/underlined version of card text.
         
@@ -207,16 +460,23 @@ Format: ["phrase 1", "phrase 2", ...]"""
                 except:
                     key_phrases = []
         
-        # Mark key phrases with underline markers
         highlighted = full_text
+        
+        # Always emphasize the primary passage (case-insensitive)
+        if focus_passage:
+            highlighted, matched = self._mark_phrase(highlighted, focus_passage)
+            if not matched and len(highlighted) > 0:
+                # fallback: highlight first sentence if passage not found
+                first_sentence = highlighted.split('\n')[0][:300]
+                highlighted, _ = self._mark_phrase(highlighted, first_sentence)
+        
         for phrase in key_phrases:
-            if phrase in highlighted:
-                highlighted = highlighted.replace(phrase, f"__{phrase}__")
+            highlighted, _ = self._mark_phrase(highlighted, phrase)
         
         return {
             "full_text": full_text,
             "highlighted": highlighted,
-            "key_phrases": key_phrases
+            "key_phrases": key_phrases or []
         }
     
     def format_card(
@@ -226,6 +486,7 @@ Format: ["phrase 1", "phrase 2", ...]"""
         year: str,
         title: str,
         source: str,
+        focus_passage: Optional[str] = None,
         url: Optional[str] = None,
         qualifications: Optional[str] = None,
         argument_context: Optional[str] = None,
@@ -258,7 +519,10 @@ Format: ["phrase 1", "phrase 2", ...]"""
         
         # Highlight if requested
         if highlight:
-            highlight_data = self.highlight_card(evidence_text)
+            highlight_data = self.highlight_card(
+                evidence_text,
+                focus_passage=focus_passage
+            )
             highlighted_text = highlight_data["highlighted"]
             key_phrases = highlight_data["key_phrases"]
         else:
@@ -280,6 +544,7 @@ Format: ["phrase 1", "phrase 2", ...]"""
             "card_text": evidence_text,
             "highlighted_text": highlighted_text,
             "key_phrases": key_phrases,
+            "focus_passage": focus_passage,
             "full_card": full_card
         }
     

@@ -469,6 +469,7 @@ from app.debate.card_formatter import get_card_formatter
 
 class FormatCardRequest(BaseModel):
     evidence_text: str
+    focus_passage: Optional[str] = None
     author: str
     year: str
     title: str
@@ -485,6 +486,11 @@ class ExtractCardsRequest(BaseModel):
     topic_context: str = "Arctic policy debate"
     side: str = "aff"
     max_cards: int = 5
+
+
+class GenerateEvidenceRequest(BaseModel):
+    claim_override: Optional[str] = None
+    full_text_override: Optional[str] = None
 
 
 @router.post("/cards/format")
@@ -508,6 +514,7 @@ async def format_card(
         formatter = get_card_formatter()
         result = formatter.format_card(
             evidence_text=request.evidence_text,
+            focus_passage=request.focus_passage,
             author=request.author,
             year=request.year,
             title=request.title,
@@ -560,4 +567,128 @@ async def extract_cards(
     except Exception as e:
         logger.error(f"Card extraction error: {e}")
         return {"success": False, "error": str(e), "cards": []}
+
+
+class ExtractPassageRequest(BaseModel):
+    """Request to extract original author's text for a card."""
+    original_content: str
+    claim_or_summary: str
+
+
+@router.post("/cards/extract-passage")
+async def extract_passage(
+    request: ExtractPassageRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
+    """
+    Extract the original author's verbatim text from source content.
+    
+    REQUIRES AUTHENTICATION (uses OpenAI API).
+    
+    This is the correct way to cut cards:
+    1. Fetch the original article content from URL
+    2. Use the AI summary/claim to identify the relevant section
+    3. Extract the ACTUAL AUTHOR'S WORDS with surrounding context
+    4. Highlight those original words (not AI paraphrasing)
+    
+    Args:
+        original_content: Full text fetched from the source URL
+        claim_or_summary: The AI-generated summary or claim to find evidence for
+    
+    Returns:
+        {
+            "success": True/False,
+            "passage": "Verbatim text from the original source",
+            "start_context": "What comes before",
+            "relevance": "Why this supports the claim"
+        }
+    """
+    logger.info(f"Extracting passage from {len(request.original_content)} chars of source content")
+    
+    if len(request.original_content.strip()) < 100:
+        return {
+            "success": False,
+            "error": "Source content too short. Please fetch the article content first.",
+            "passage": ""
+        }
+    
+    try:
+        formatter = get_card_formatter()
+        result = formatter.extract_evidence_passage(
+            original_content=request.original_content,
+            claim_or_summary=request.claim_or_summary
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Passage extraction error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "passage": ""
+        }
+
+
+@router.post("/{article_id}/generate-evidence")
+async def generate_article_evidence(
+    article_id: int,
+    request: GenerateEvidenceRequest,
+    user: dict = Depends(require_auth_and_rate_limit)
+):
+    """Generate and store evidence excerpt/context for an article."""
+    manager = get_article_manager()
+    analyzer = get_article_analyzer()
+    formatter = get_card_formatter()
+    
+    article = manager.get_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    
+    full_text = request.full_text_override or (article.get("full_text") or "")
+    if len(full_text.strip()) < 200:
+        fetch_result = await analyzer.fetch_article(article["url"])
+        if fetch_result.get("error") or fetch_result.get("is_paywalled"):
+            return {
+                "success": False,
+                "error": fetch_result.get("error") or "Article appears to be paywalled"
+            }
+        full_text = (fetch_result.get("text") or "").strip()
+        if len(full_text) < 200:
+            return {"success": False, "error": "Article content too short"}
+        manager.update_evidence_fields(article_id, full_text=full_text)
+    
+    claim_text = request.claim_override or " ".join(
+        filter(
+            None,
+            [
+                article.get("summary", ""),
+                " ".join(article.get("key_claims") or []),
+            ],
+        )
+    ).strip()
+    
+    passage = formatter.extract_evidence_passage(
+        original_content=full_text,
+        claim_or_summary=claim_text or full_text[:500],
+    )
+    
+    evidence_excerpt = passage.get("passage")
+    evidence_context = passage.get("context_passage") or evidence_excerpt
+    
+    if not evidence_excerpt or not evidence_context:
+        return {"success": False, "error": "Could not extract passage"}
+    
+    manager.update_evidence_fields(
+        article_id,
+        evidence_excerpt=evidence_excerpt,
+        evidence_context=evidence_context,
+    )
+    
+    return {
+        "success": True,
+        "article_id": article_id,
+        "evidence_excerpt": evidence_excerpt,
+        "evidence_context": evidence_context
+    }
 

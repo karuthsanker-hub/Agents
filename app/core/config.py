@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     secret_key: str = "change-me-in-production-use-secrets-token"
+    app_version: str = "v1.0.0"
     
     # CORS allowed origins (comma-separated in env)
     allowed_origins: str = "http://localhost:8000,http://127.0.0.1:8000"
